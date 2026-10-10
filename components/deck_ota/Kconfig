@@ -6,7 +6,7 @@ menu "DECK//OS updates"
         help
             owner/name of the repository whose Releases carry update images.
             The Tab5 takes assets ending in -ota.bin; the T-Display P4 only
-            takes assets ending in -tdisplay-p4-ota.bin, so it never installs
+            takes assets ending in -ota-tdisplay-p4.bin, so it never installs
             a Tab5 image.
 
 endmenu

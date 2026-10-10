@@ -218,6 +218,45 @@ over-the-air updates too (only signed builds check signatures). Note that, like
 the official firmware, any build burns its settings encryption key into a free
 eFuse key block on first boot (see Security).
 
+## LilyGo T-Display P4 build
+
+The same firmware runs on the LilyGo T-Display P4 v1.0 with the 4.1" AMOLED
+and the K270 keyboard, in portrait with the keyboard docked below. Build it
+with the board switch (it uses `sdkconfig.defaults.tdisplay_p4` and its own
+`sdkconfig.tdisplay_p4`):
+
+```bash
+git submodule update --init --recursive
+```
+
+```bash
+idf.py -B build-tdisplay_p4 -DDECK_BOARD=tdisplay_p4 build
+```
+
+```bash
+idf.py -B build-tdisplay_p4 -DDECK_BOARD=tdisplay_p4 -p /dev/cu.usbmodem* flash monitor
+```
+
+Needs ESP-IDF 5.5.3 or newer (pre-v3 chip revision support; LilyGo ships
+ESP32-P4 rev 1.x). The image is `deck_tdisplay_p4.bin`.
+
+- **Wi-Fi** needs LilyGo's ESP-Hosted network adapter (2.12.x) on the C6, the
+  firmware LilyGo's factory image (LilygoBox) installs. A C6 still running
+  ESP-AT shows `NO RADIO`; flash the adapter from a LilygoBox release over
+  the C6 UART header (see LilyGo's T-Display-P4 README).
+- **Keyboard:** Fn gives the symbols printed on the keys, Fn+arrows are
+  Home/End/PgUp/PgDn, Fn+Backspace is Delete, the mic key is F12. Caps Lock
+  lights LED 1. Power both halves off before docking or undocking.
+- **Not supported yet:** the TFT variant, LoRa, GPS, camera, Ethernet, IMU,
+  the keyboard's CC1101/nRF24/NFC radios (kept unpowered), and battery
+  gauge calibration (the BQ27220 keeps whatever profile it already has).
+- **OTA** only installs release assets named `*-ota-tdisplay-p4.bin`, and the
+  image carries its own project name, so a Tab5 and a T-Display never take
+  each other's builds.
+
+The simulator renders the portrait layout with
+`cmake -S sim -B sim/build-p4 -DDECK_BOARD=tdisplay_p4`.
+
 ## Desktop simulator
 
 `sim/` runs the same UI code (everything above `deck_hal` and `deck_net`) on

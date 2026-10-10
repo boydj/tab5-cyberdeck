@@ -36,4 +36,10 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # Components pick their board sources from this build property: component
 # requirements are resolved before Kconfig runs, so they cannot use CONFIG_*.
 idf_build_set_property(DECK_BOARD "${DECK_BOARD}")
-project(tab5_cyberdeck)
+# The project name is stored in the image and OTA refuses images with another
+# name, so each board gets its own: a Tab5 never installs a T-Display image.
+if(DECK_BOARD STREQUAL "tdisplay_p4")
+    project(deck_tdisplay_p4)
+else()
+    project(tab5_cyberdeck)
+endif()

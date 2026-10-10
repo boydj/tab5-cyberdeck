@@ -339,7 +339,9 @@ void tdp4_kbd_backlight(uint8_t percent)
     if (percent != 255) s_bl_level = percent > 100 ? 100 : percent;
     if (!s_bl_ready) return;
     uint32_t level = s_present ? s_bl_level : 0;
-    uint32_t duty  = (1023u * level * level) / 10000u; /* perceptual curve */
+    /* Perceptual curve, capped at half duty: LilyGo limits the SY7200A to
+     * 50% because a heavier load upsets the rest of the system. */
+    uint32_t duty  = (511u * level * level) / 10000u;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, BL_CHANNEL, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, BL_CHANNEL);
 }

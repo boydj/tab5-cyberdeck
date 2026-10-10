@@ -25,9 +25,12 @@ static const char *TAG = "ota";
 #define REPO "hey-its-brian/tab5-cyberdeck"
 #endif
 /* Images are board-specific: a Tab5 image boots on a T-Display P4 with the
- * wrong pins (and the reverse), so each board only accepts its own. */
+ * wrong pins (and the reverse), so each board only accepts its own. The
+ * T-Display suffix deliberately does not end in "-ota.bin", which Tab5
+ * builds up to v1.1.0 accept unconditionally. The two boards also build
+ * under different project names, which ota_install() checks. */
 #ifdef DECK_BOARD_TDISPLAY_P4
-#define ASSET_SUFFIX "-tdisplay-p4-ota.bin"
+#define ASSET_SUFFIX "-ota-tdisplay-p4.bin"
 #else
 #define ASSET_SUFFIX "-ota.bin"
 #endif
@@ -107,7 +110,7 @@ static bool read_release(const cJSON *rel)
             size_t n = strlen(name->valuestring), sl = strlen(ASSET_SUFFIX);
             bool ours = n > sl && strcmp(name->valuestring + n - sl, ASSET_SUFFIX) == 0;
 #ifndef DECK_BOARD_TDISPLAY_P4
-            if (strstr(name->valuestring, "-tdisplay-p4-") != NULL) ours = false;
+            if (strstr(name->valuestring, "tdisplay-p4") != NULL) ours = false;
 #endif
             if (ours && strncmp(url->valuestring, ASSET_PREFIX, strlen(ASSET_PREFIX)) == 0) {
                 snprintf(s_asset_url, sizeof(s_asset_url), "%s", url->valuestring);
@@ -147,7 +150,7 @@ static void check_task(void *arg)
         ESP_LOGI(TAG, "up to date: running %s, latest release %s", s_running, s_latest);
         s_state = OTA_UP_TO_DATE;
     } else if (s_asset_url[0] == '\0') {
-        fail("newer release has no OTA image (-ota.bin)");
+        fail("newer release has no OTA image (*" ASSET_SUFFIX ")");
     } else {
         ESP_LOGI(TAG, "update available: %s -> %s%s", s_running, s_latest, s_prerelease ? " (pre-release)" : "");
         s_state = OTA_AVAILABLE;

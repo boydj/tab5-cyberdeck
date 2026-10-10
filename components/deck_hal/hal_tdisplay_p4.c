@@ -33,6 +33,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_ldo_regulator.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_vfs_fat.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -136,10 +137,11 @@ static bool xl9535_init(void)
      * Ethernet held in reset, audio off. Inputs: touch INT (4), IMU INT (7). */
     s_xl_out[0] = 0x92;
     const uint8_t cfg0 = 0x90;
-    /* Port 1: USB PHY power on, C6 held off until hal_radio_init(), SD power
-     * off (high). Inputs: GPS wake, RTC INT, C6 wake, radio reset/IRQ. */
-    s_xl_out[1] = 0xEF;
-    const uint8_t cfg1 = 0xCE;
+    /* Port 1: USB PHY power on, GPS wake low (L76K asleep), C6 held off until
+     * hal_radio_init(), SD power off (high), LoRa radio held in reset (both
+     * unused, as LilyGo leaves them). Inputs: RTC INT, C6 wake, radio IRQ. */
+    s_xl_out[1] = 0xAD;
+    const uint8_t cfg1 = 0x8C;
 
     bool ok = reg_write(s_xl, XL_OUT0, s_xl_out[0]) == ESP_OK && reg_write(s_xl, XL_OUT0 + 1, s_xl_out[1]) == ESP_OK &&
               reg_write(s_xl, XL_CFG0, cfg0) == ESP_OK && reg_write(s_xl, XL_CFG0 + 1, cfg1) == ESP_OK;
@@ -344,11 +346,16 @@ void hal_backlight_set(uint8_t percent)
 
 /* AMOLED sleep: display off and sleep in; the DPI stream keeps running and
  * the panel ignores it. Waking needs 120 ms after sleep out (datasheet). */
+static int64_t s_sleep_in_us; /* when sleep-in was sent */
+
 void hal_display_power(bool on)
 {
     if (on == s_display_on || s_lcd_io == NULL) return;
     s_display_on = on;
     if (on) {
+        /* Sleep-out must wait 120 ms after sleep-in (RM69A10 timing). */
+        int64_t since_ms = (esp_timer_get_time() - s_sleep_in_us) / 1000;
+        if (since_ms < 120) vTaskDelay(pdMS_TO_TICKS(120 - since_ms));
         lcd_cmd(0x11, NULL, 0);
         vTaskDelay(pdMS_TO_TICKS(120));
         lcd_cmd(0x29, NULL, 0);
@@ -358,6 +365,7 @@ void hal_display_power(bool on)
         panel_brightness(0);
         lcd_cmd(0x28, NULL, 0);
         lcd_cmd(0x10, NULL, 0);
+        s_sleep_in_us = esp_timer_get_time();
         tdp4_kbd_backlight(0);
     }
 }

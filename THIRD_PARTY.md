@@ -7,6 +7,8 @@
 | `components/md4c` | [mity/md4c](https://github.com/mity/md4c) 0.5.2 | MIT | Markdown parser, unmodified. |
 | `components/minimp3` | [lieff/minimp3](https://github.com/lieff/minimp3) at `ea99364` | CC0 1.0 (public domain) | MP3 decoder, unmodified (`minimp3.c` is ours: the implementation unit, layer III only). |
 | esp_codec_dev | [espressif/esp_codec_dev](https://components.espressif.com/components/espressif/esp_codec_dev) 1.5 via the component registry | Apache 2.0 | ES8388 codec driver and I2S data path. |
+| `third_party/esp-hosted-mcu-lilygo` | [Llgok/esp-hosted-mcu](https://github.com/Llgok/esp-hosted-mcu) at `719343b` (LilyGo's fork of espressif/esp-hosted-mcu 2.12.3), git submodule | Apache 2.0 | T-Display P4 build only: adds an external C6 reset callback (the enable is on an IO expander). Unmodified. |
+| T-Display P4 hardware facts | [Xinyuan-LilyGO/lilygo_device_driver](https://github.com/Xinyuan-LilyGO/lilygo_device_driver), [Llgok/cpp_bus_driver](https://github.com/Llgok/cpp_bus_driver), board schematics | reference only | Pin map, power/reset order, RM69A10 init sequence, GT9895 report layout and the K270 key map were taken from LilyGo's drivers and schematics; the deck_hal code is written from scratch and links none of it. |
 | `components/libvterm` | [libvterm](https://www.leonerd.org.uk/code/libvterm/) 0.3.3 | MIT | Terminal emulation, unmodified. |
 | JetBrains Mono (subset) | [Google Fonts](https://github.com/google/fonts/tree/main/ofl/jetbrainsmono) | SIL OFL 1.1 | `assets/fonts/OFL-JetBrainsMono.txt`; subset by `tools/subset_term_font.py` |
 | LVGL 9.5 | [lvgl/lvgl](https://github.com/lvgl/lvgl) via the component registry | MIT | |

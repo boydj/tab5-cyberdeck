@@ -36,3 +36,9 @@ CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 # ---- Display ------------------------------------------------------------------
 # Native portrait AMOLED: no PPA rotation needed.
 # CONFIG_LVGL_PORT_ENABLE_PPA is not set
+# esp_lvgl_port's DPI refresh callback lives in flash, and with a cache-safe
+# DSI ISR the driver rejects it, so the first flush would wait forever. Turn
+# it off here (the Tab5 has its own IRAM callback). Cost: the panel may
+# flicker while flash is being written (OTA download).
+# CONFIG_LCD_DSI_ISR_IRAM_SAFE is not set
+# CONFIG_LCD_DSI_ISR_CACHE_SAFE is not set
