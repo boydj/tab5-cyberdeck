@@ -291,9 +291,9 @@ lv_obj_t *deck_button(lv_obj_t *parent, const char *text, const lv_font_t *font)
     lv_obj_center(l);
 
     lv_obj_add_event_cb(b, button_label_color, LV_EVENT_STATE_CHANGED, NULL);
-    /* Portrait screens stack panes into scrolling columns: keep the
+    /* Portrait and short landscape screens scroll some pages: keep the
      * keyboard-focused button in view. */
-    if (HAL_PORTRAIT) lv_obj_add_flag(b, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    if (deck_shape() != DECK_SHAPE_WIDE) lv_obj_add_flag(b, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_group_t *g = lv_group_get_default();
     if (g) lv_group_add_obj(g, b);
     return b;

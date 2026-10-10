@@ -205,3 +205,66 @@ void hal_sysinfo(hal_sysinfo_t *out)
     out->psram_total    = 32768 * 1024;
     out->uptime_s       = lv_tick_get() / 1000;
 }
+
+/* ---- Orientation ----------------------------------------------------------- */
+
+/* The T-Display build turns like the device: --tilt / F8 play the motion
+ * sensor; the Tab5 build never rotates. */
+static hal_rot_t s_rot, s_tilt;
+
+void sim_set_tilt(int rot)
+{
+    s_tilt = (hal_rot_t)(rot & 3);
+    printf("[sim] tilt %d\n", (int)s_tilt * 90);
+}
+
+bool hal_orient_supported(void)
+{
+#ifdef DECK_BOARD_TDISPLAY_P4
+    return true;
+#else
+    return false;
+#endif
+}
+
+hal_orient_mode_t hal_orient_mode(void)
+{
+    int32_t m = hal_cfg_get_i32("orient", HAL_ORIENT_AUTO);
+    return (m >= 0 && m < HAL_ORIENT_MODE_COUNT) ? (hal_orient_mode_t)m : HAL_ORIENT_AUTO;
+}
+
+void hal_orient_set_mode(hal_orient_mode_t mode) { hal_cfg_set_i32("orient", (int32_t)mode); }
+
+hal_rot_t hal_orient_wanted(void)
+{
+    if (!hal_orient_supported()) return HAL_ROT_0;
+    switch (hal_orient_mode()) {
+        case HAL_ORIENT_PORTRAIT: return HAL_ROT_0;
+        case HAL_ORIENT_LANDSCAPE: return HAL_ROT_90;
+        case HAL_ORIENT_LANDSCAPE_FLIP: return HAL_ROT_270;
+        default: break;
+    }
+    return hal_kbd_present() ? HAL_ROT_0 : s_tilt;
+}
+
+hal_rot_t hal_display_rotation(void) { return s_rot; }
+
+/* The sim has no panel to turn: it resizes the window (or the headless
+ * frame) to the rotated size, which is what the UI sees on the device. */
+void hal_display_set_rotation(hal_rot_t rot)
+{
+    if (!hal_orient_supported() || rot == s_rot) return;
+    s_rot     = rot;
+    bool side = rot == HAL_ROT_90 || rot == HAL_ROT_270;
+    lv_display_set_resolution(NULL, side ? HAL_PANEL_H : HAL_PANEL_W, side ? HAL_PANEL_W : HAL_PANEL_H);
+    sim_display_resized();
+    printf("[sim] rotation %d (%dx%d)\n", (int)rot * 90, hal_screen_w(), hal_screen_h());
+}
+
+const char *hal_orient_sensor(void) { return hal_orient_supported() ? "SIM" : NULL; }
+
+bool hal_orient_calibrate(int step)
+{
+    printf("[sim] calibrate step %d\n", step);
+    return hal_orient_supported();
+}

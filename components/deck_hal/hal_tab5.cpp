@@ -448,3 +448,18 @@ bool hal_init(void)
 bool hal_radio_init(void) { return true; }
 
 void *hal_codec_i2c(void) { return hal_tab5_sys_i2c(); }
+
+/* ---- Orientation: the Tab5 keeps its keyboard below a landscape screen --- */
+
+bool hal_orient_supported(void) { return false; }
+hal_orient_mode_t hal_orient_mode(void) { return HAL_ORIENT_LANDSCAPE; }
+void hal_orient_set_mode(hal_orient_mode_t mode) { (void)mode; }
+hal_rot_t hal_orient_wanted(void) { return HAL_ROT_0; }
+hal_rot_t hal_display_rotation(void) { return HAL_ROT_0; }
+void hal_display_set_rotation(hal_rot_t rot) { (void)rot; }
+const char *hal_orient_sensor(void) { return nullptr; }
+bool hal_orient_calibrate(int step)
+{
+    (void)step;
+    return false;
+}

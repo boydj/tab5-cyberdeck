@@ -148,9 +148,9 @@ static lv_obj_t *begin_build(modal_kind_t kind, const char *title, void *user)
     deck_panel_set_tab(p, true);
     deck_panel_set_outline(p, g_pal.accent);
     lv_obj_set_size(p, DECK_FIT_W(720, MODAL_MARGIN), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(p, DECK_LP(30, 22), 0);
+    lv_obj_set_style_pad_all(p, DECK_LSP(30, 22, 22), 0);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(p, 20, 0);
+    lv_obj_set_style_pad_row(p, DECK_LSP(20, 14, 20), 0);
     deck_section(p, title);
     return p;
 }
@@ -179,7 +179,7 @@ static void end_build(lv_obj_t *panel, const char *ok_label)
         lv_keyboard_set_textarea(kb, s_m.ta);
         lv_obj_add_event_cb(kb, ok_clicked, LV_EVENT_READY, NULL);
         lv_obj_add_event_cb(kb, cancel_clicked, LV_EVENT_CANCEL, NULL);
-        lv_obj_align(panel, LV_ALIGN_TOP_MID, 0, 40);
+        lv_obj_align(panel, LV_ALIGN_TOP_MID, 0, DECK_LSP(40, 20, 40));
     } else {
         lv_obj_center(panel);
     }
@@ -240,7 +240,7 @@ void deck_modal_list(const char *title, const char *const *items, int count, dec
 
     lv_obj_t *list = deck_box(p);
     lv_obj_set_width(list, LV_PCT(100));
-    lv_obj_set_style_max_height(list, DECK_LP(380, 640), 0);
+    lv_obj_set_style_max_height(list, DECK_LSP(380, 300, 640), 0);
     lv_obj_set_height(list, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(list, 8, 0);
@@ -301,27 +301,32 @@ void deck_modal_info(const char *title, const char *const *columns, int count)
     lv_obj_set_width(p, DECK_FIT_W(1040, MODAL_MARGIN));
     lv_obj_t *cols = deck_box(p);
     lv_obj_set_size(cols, LV_PCT(100), LV_SIZE_CONTENT);
-#if HAL_PORTRAIT
-    /* Narrow screen: the columns follow each other, scrolling if need be. */
-    lv_obj_set_flex_flow(cols, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(cols, 22, 0);
-    lv_obj_set_style_max_height(cols, HAL_SCREEN_H - 250, 0);
-    lv_obj_add_flag(cols, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scroll_dir(cols, LV_DIR_VER);
-    for (int i = 0; i < count; i++) {
-        lv_obj_t *l = deck_label(cols, g_font.mono_s, g_pal.text, columns[i]);
-        lv_obj_set_width(l, LV_PCT(100));
-        lv_obj_set_style_text_line_space(l, 5, 0);
+    if (HAL_PORTRAIT) {
+        /* Narrow screen: the columns follow each other, scrolling if need be. */
+        lv_obj_set_flex_flow(cols, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(cols, 22, 0);
+        lv_obj_set_style_max_height(cols, HAL_SCREEN_H - 250, 0);
+        lv_obj_add_flag(cols, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scroll_dir(cols, LV_DIR_VER);
+        for (int i = 0; i < count; i++) {
+            lv_obj_t *l = deck_label(cols, g_font.mono_s, g_pal.text, columns[i]);
+            lv_obj_set_width(l, LV_PCT(100));
+            lv_obj_set_style_text_line_space(l, 5, 0);
+        }
+    } else {
+        lv_obj_set_flex_flow(cols, LV_FLEX_FLOW_ROW);
+        lv_obj_set_style_pad_column(cols, 40, 0);
+        if (DECK_SHORT) { /* tighter lines, and scroll whatever still does not fit */
+            lv_obj_set_style_max_height(cols, HAL_SCREEN_H - 2 * MODAL_MARGIN - 160, 0);
+            lv_obj_add_flag(cols, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_scroll_dir(cols, LV_DIR_VER);
+        }
+        for (int i = 0; i < count; i++) {
+            lv_obj_t *l = deck_label(cols, g_font.mono_s, g_pal.text, columns[i]);
+            lv_obj_set_flex_grow(l, 1);
+            lv_obj_set_style_text_line_space(l, DECK_SHORT ? 1 : 5, 0);
+        }
     }
-#else
-    lv_obj_set_flex_flow(cols, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(cols, 40, 0);
-    for (int i = 0; i < count; i++) {
-        lv_obj_t *l = deck_label(cols, g_font.mono_s, g_pal.text, columns[i]);
-        lv_obj_set_flex_grow(l, 1);
-        lv_obj_set_style_text_line_space(l, 5, 0);
-    }
-#endif
     end_build(p, NULL); /* a single button: rename it, Enter and Esc both close */
     lv_label_set_text(lv_obj_get_child_by_type(s_m.cancel_btn, 0, &lv_label_class), "CLOSE");
 }

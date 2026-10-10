@@ -148,11 +148,14 @@ static void term_output(const char *d, size_t n, void *u)
     link_write(d, n);
 }
 
+static void update_info(void);
+
 static void term_resized(int cols, int rows, void *u)
 {
     (void)u;
     snprintf(s_t.cols_rows, sizeof(s_t.cols_rows), "%dx%d", cols, rows);
     link_resize(cols, rows);
+    if (s_t.info) update_info();
 }
 
 static void update_info(void)
@@ -203,28 +206,50 @@ static void pump(lv_timer_t *tm)
     }
 }
 
-#if HAL_PORTRAIT
-/* Two rows on a narrow screen; Fn stays put so it toggles back in place.
- * CTRL must stay button 2 (set_bar_page makes it checkable). */
-static const char *s_bar_main[] = {"ESC", "TAB", "CTRL", "PGUP", "PGDN", "HOME", "END", "\n",
-                                   "Fn",  "<",   "UP",   "DN",   ">",    "QUIT", ""};
-static const char *s_bar_fn[] = {"F1", "F2", "F3", "F4", "F5", "F6", "F7", "\n",
-                                 "Fn", "F8", "F9", "F10", "F11", "F12", ""};
-#define BAR_H 104
-#else
+/* Landscape: one row. CTRL must stay button 2 (set_bar_page makes it
+ * checkable). */
 static const char *s_bar_main[] = {"ESC", "TAB", "CTRL", "<", "UP", "DN", ">", "PGUP", "PGDN", "HOME", "END", "Fn",
                                    "QUIT", ""};
 static const char *s_bar_fn[] = {"F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Fn",
                                  ""};
-#define BAR_H 54
-#endif
+/* Portrait: two rows on the narrow screen; Fn stays put so it toggles back
+ * in place. */
+static const char *s_bar_main_2[] = {"ESC", "TAB", "CTRL", "PGUP", "PGDN", "HOME", "END", "\n",
+                                     "Fn",  "<",   "UP",   "DN",   ">",    "QUIT", ""};
+static const char *s_bar_fn_2[] = {"F1", "F2", "F3", "F4", "F5", "F6", "F7", "\n",
+                                   "Fn", "F8", "F9", "F10", "F11", "F12", ""};
+#define BAR_H DECK_LP(54, 104)
 
+/* Show the main or the Fn page, in the row layout the screen has now. */
 static void set_bar_page(bool fn)
 {
     s_t.fn_page = fn;
-    lv_buttonmatrix_set_map(s_t.bar, fn ? s_bar_fn : s_bar_main);
+    if (HAL_PORTRAIT) {
+        lv_buttonmatrix_set_map(s_t.bar, fn ? s_bar_fn_2 : s_bar_main_2);
+    } else {
+        lv_buttonmatrix_set_map(s_t.bar, fn ? s_bar_fn : s_bar_main);
+    }
     lv_buttonmatrix_clear_button_ctrl_all(s_t.bar, LV_BUTTONMATRIX_CTRL_CHECKED);
-    if (!fn) lv_buttonmatrix_set_button_ctrl(s_t.bar, 2, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+    if (!fn) {
+        lv_buttonmatrix_set_button_ctrl(s_t.bar, 2, LV_BUTTONMATRIX_CTRL_CHECKABLE);
+        /* A sticky Ctrl survives a re-map (rotation): show it still armed. */
+        if (s_t.term && deck_term_sticky_ctrl(s_t.term)) {
+            lv_buttonmatrix_set_button_ctrl(s_t.bar, 2, LV_BUTTONMATRIX_CTRL_CHECKED);
+        }
+    }
+}
+
+/* The parts of the session screen that depend on the screen's shape. */
+static void style_info(void)
+{
+    if (deck_shape() == DECK_SHAPE_WIDE) {
+        lv_label_set_long_mode(s_t.info, LV_LABEL_LONG_MODE_WRAP);
+        lv_obj_set_height(s_t.info, LV_SIZE_CONTENT);
+    } else {
+        /* One line, cut with dots: a wrap would shrink the grid mid-session. */
+        lv_label_set_long_mode(s_t.info, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_height(s_t.info, lv_font_get_line_height(g_font.mono_s) + 8);
+    }
 }
 
 static void close_term(void)
@@ -273,29 +298,19 @@ static void open_term(const host_t *h, const char *password)
     lv_obj_set_style_pad_all(root, 0, 0);
     lv_obj_set_style_pad_row(root, 0, 0);
 
+    if (h->local) {
+        snprintf(s_t.target, sizeof(s_t.target), "LOCAL SHELL");
+    } else {
+        snprintf(s_t.target, sizeof(s_t.target), "%s@%s:%u", h->user, h->host, h->port);
+    }
+
     s_t.info = deck_label(root, g_font.mono_s, g_pal.warn, "");
     lv_obj_set_width(s_t.info, LV_PCT(100));
     lv_obj_set_style_pad_hor(s_t.info, 12, 0);
     lv_obj_set_style_pad_ver(s_t.info, 4, 0);
     lv_obj_set_style_bg_color(s_t.info, g_pal.panel, 0);
     lv_obj_set_style_bg_opa(s_t.info, LV_OPA_COVER, 0);
-    if (HAL_PORTRAIT) {
-        /* One line, cut with dots: a wrap would shrink the grid mid-session. */
-        lv_label_set_long_mode(s_t.info, LV_LABEL_LONG_MODE_DOTS);
-        lv_obj_set_height(s_t.info, lv_font_get_line_height(g_font.mono_s) + 8);
-    }
-
-    lv_obj_t *area = deck_box(root);
-    lv_obj_set_width(area, LV_PCT(100));
-    lv_obj_set_flex_grow(area, 1);
-
-    if (h->local) {
-        snprintf(s_t.target, sizeof(s_t.target), "LOCAL SHELL");
-    } else {
-        snprintf(s_t.target, sizeof(s_t.target), "%s@%s:%u", h->user, h->host, h->port);
-    }
-    deck_term_cfg_t cfg = {.output = term_output, .resized = term_resized};
-    s_t.term            = deck_term_create(area, &cfg);
+    style_info();
 
     s_t.bar = lv_buttonmatrix_create(root);
     lv_obj_set_size(s_t.bar, LV_PCT(100), BAR_H);
@@ -319,6 +334,15 @@ static void open_term(const host_t *h, const char *password)
     lv_obj_add_event_cb(s_t.bar, bar_clicked, LV_EVENT_VALUE_CHANGED, NULL);
     lv_group_remove_obj(s_t.bar);
     set_bar_page(false);
+
+    /* The grid goes between the two, made last so it starts at its real
+     * size (the remote is told that size when the link opens). */
+    lv_obj_t *area = deck_box(root);
+    lv_obj_set_width(area, LV_PCT(100));
+    lv_obj_set_flex_grow(area, 1);
+    lv_obj_move_to_index(area, 1);
+    deck_term_cfg_t cfg = {.output = term_output, .resized = term_resized};
+    s_t.term            = deck_term_create(area, &cfg);
 
     int cols, rows;
     deck_term_size(s_t.term, &cols, &rows);
@@ -434,7 +458,7 @@ static void show_hosts(void)
     lv_obj_t *focus = NULL;
     for (int i = 0; i < s_nhosts; i++) {
         lv_obj_t *row = deck_panel(list, DECK_CUT_BR, 12);
-        lv_obj_set_size(row, LV_PCT(100), DECK_LP(68, 80));
+        lv_obj_set_size(row, LV_PCT(100), DECK_LSP(68, 60, 80));
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_CLICK_FOCUSABLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS);
         lv_obj_set_style_pad_hor(row, 18, 0);
         lv_obj_set_user_data(row, (void *)(intptr_t)(i + 1));
@@ -532,6 +556,26 @@ static void stop(deck_app_t *self)
     memset(&s_t, 0, sizeof(s_t));
 }
 
+/* The screen turned. With a session open, keep it: re-flow the key bar and
+ * the info line, and let the grid take its new size (the remote gets a
+ * window-change). Otherwise rebuild the host list at the new size. Dialogs
+ * (password, new host, host key) never see this: the shell waits for them
+ * to close before turning. */
+static void term_relayout(deck_app_t *self)
+{
+    (void)self;
+    if (!s_t.in_term) {
+        show_hosts();
+        return;
+    }
+    style_info();
+    lv_obj_set_height(s_t.bar, BAR_H);
+    set_bar_page(s_t.fn_page);
+    lv_obj_update_layout(s_t.screen);
+    deck_term_refit(s_t.term);
+    update_info();
+}
+
 static deck_app_t s_app = {
     .name     = "TERMINAL",
     .tagline  = "SSH UPLINK",
@@ -541,6 +585,7 @@ static deck_app_t s_app = {
     .on_exit  = term_exit,
     .on_stop  = stop,
     .on_key   = on_key,
+    .on_relayout = term_relayout,
 };
 
 deck_app_t *app_term(void) { return &s_app; }

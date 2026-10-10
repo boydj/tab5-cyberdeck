@@ -9,6 +9,11 @@
  *                           module's widgets still exist (save work here)
  *   on_stop()               optional: free non-LVGL resources; runs after
  *                           the widgets are deleted
+ *   on_relayout()           optional: the screen turned (portrait <->
+ *                           landscape) while the module is open. Re-flow the
+ *                           widgets under `parent` for HAL_SCREEN_W/H and keep
+ *                           running. Without it the shell restarts the module
+ *                           (on_exit, on_stop, on_start) at the new size.
  *
  * The shell deletes everything under `parent` between on_exit() and
  * on_stop(), so LVGL children never need freeing by hand. All callbacks run on the LVGL task with the lock held.
@@ -40,6 +45,7 @@ struct deck_app {
     void (*on_exit)(deck_app_t *self);
     void (*on_stop)(deck_app_t *self);
     bool (*on_key)(deck_app_t *self, const deck_key_t *key);
+    void (*on_relayout)(deck_app_t *self);
 
     void *user;
 };

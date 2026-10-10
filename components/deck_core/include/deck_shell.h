@@ -30,6 +30,15 @@ deck_app_t *deck_shell_current(void);
  * running app is restarted in place, without a transition. */
 void deck_shell_rebuild(void);
 
+/* Apply the ROTATION setting as soon as the current event is done (after it
+ * changed) instead of on the next poll. Safe to call from a widget's event
+ * handler. No-op on boards that do not rotate. */
+void deck_shell_orient_now(void);
+
+/* A module's own dialog (not a deck_modal) is open: do not turn the screen
+ * under it. Released automatically when the module stops. */
+void deck_shell_orient_hold(bool hold);
+
 /* Screen sleep: backlight and keyboard LEDs off, everything keeps running.
  * Any key or touch wakes it, and that press is swallowed. Alt+0 or a tap
  * on the status bar clock sleeps. */

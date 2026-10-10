@@ -8,6 +8,7 @@
 #include "deck_modal.h"
 #include "deck_statusbar.h"
 #include "deck_theme.h"
+#include "deck_update.h"
 #include "deck_widgets.h"
 
 #define TRANSITION_MS 260
@@ -17,6 +18,7 @@ static lv_obj_t *s_content;
 static deck_app_t *s_current;
 static deck_app_t *s_next;   /* app to start at the midpoint of a transition */
 static bool s_busy;          /* a transition is running */
+static bool s_orient_hold;   /* a module's own dialog is open */
 
 /* ---- Building blocks ----------------------------------------------------- */
 
@@ -44,6 +46,7 @@ static void teardown(void)
 {
     deck_app_t *app = s_current;
     s_current       = NULL;
+    s_orient_hold   = false;
     if (app && app->on_exit) app->on_exit(app);
     deck_modal_discard();
     lv_group_remove_all_objs(deck_input_group());
@@ -164,25 +167,25 @@ void deck_shell_apply_kbd_light(void)
 
 void deck_shell_shortcuts(void)
 {
-    static const char *const cols[] = {
-        "ANYWHERE\n"
-        "  ALT+1..7    open a module\n"
-        "  ALT+ESC     back to the deck\n"
-        "  ALT+0       sleep the screen (or tap the clock)\n"
-        "  ALT+H       this list\n"
-        "  ALT+P       pause / resume music\n"
-        "  ESC         back / close\n"
-        "\n"
-        "HOME\n"
-#if HAL_PORTRAIT
-        "  ARROWS ENTER, or 1..7   pick a module\n"
-#else
-        "  LEFT RIGHT ENTER, or 1..7   pick a module\n"
-#endif
-        "\n"
-        "TERMINAL\n"
-        "  every key goes to the server, ESC too\n"
-        "  ALT+ESC leaves  SHIFT+UP/DOWN scrolls back",
+    /* Home is a row of tiles in landscape, a column of rows in portrait
+     * (where Up/Down move too). */
+#define SHORTCUTS_ANYWHERE(home_keys)                     \
+    "ANYWHERE\n"                                          \
+    "  ALT+1..7    open a module\n"                       \
+    "  ALT+ESC     back to the deck\n"                    \
+    "  ALT+0       sleep the screen (or tap the clock)\n" \
+    "  ALT+H       this list\n"                           \
+    "  ALT+P       pause / resume music\n"                \
+    "  ESC         back / close\n"                        \
+    "\n"                                                  \
+    "HOME\n"                                              \
+    "  " home_keys ", or 1..7   pick a module\n"          \
+    "\n"                                                  \
+    "TERMINAL\n"                                          \
+    "  every key goes to the server, ESC too\n"           \
+    "  ALT+ESC leaves  SHIFT+UP/DOWN scrolls back"
+    const char *cols[] = {
+        HAL_PORTRAIT ? SHORTCUTS_ANYWHERE("ARROWS ENTER") : SHORTCUTS_ANYWHERE("LEFT RIGHT ENTER"),
 
         "NOTES\n"
         "  CTRL+S save  CTRL+P preview  CTRL+T split\n"
@@ -203,12 +206,12 @@ void deck_shell_shortcuts(void)
         "  ENTER open  BACKSPACE up  DEL or D delete\n"
         "  P preview / portal  SPACE engage / disengage",
     };
+#undef SHORTCUTS_ANYWHERE
     deck_modal_info("SHORTCUTS", cols, 2);
 }
 
-static void rebuild_async(void *u)
+static void rebuild_now(void)
 {
-    (void)u;
     deck_app_t *app = s_current;
     teardown();
     deck_statusbar_destroy();
@@ -223,7 +226,63 @@ static void rebuild_async(void *u)
     }
 }
 
+static void rebuild_async(void *u)
+{
+    (void)u;
+    rebuild_now();
+}
+
 void deck_shell_rebuild(void) { lv_async_call(rebuild_async, NULL); }
+
+/* ---- Orientation ----------------------------------------------------------- */
+
+/* Turn the screen to `rot` and lay everything out again at the new size.
+ * A module with on_relayout keeps running (the terminal keeps its SSH
+ * session) and only the shell's own chrome is rebuilt around it; any other
+ * module is restarted in place, like after an accent change. */
+static void apply_rotation(hal_rot_t rot)
+{
+    hal_display_set_rotation(rot);
+    deck_app_t *app = s_current;
+    if (app && app->on_relayout) {
+        deck_statusbar_destroy();
+        deck_statusbar_create(s_root);
+        lv_obj_move_to_index(lv_obj_get_child(s_root, -1), 0); /* back on top */
+        deck_statusbar_set_app(app);
+        app->on_relayout(app);
+    } else {
+        rebuild_now();
+    }
+}
+
+/* Polled: follow the ROTATION setting, the keyboard and the motion sensor,
+ * but never under a dialog (ours or a module's own), a transition, the boot
+ * sequence, the update progress screen or a dark screen (it turns as soon
+ * as those are gone). */
+static void orient_poll(lv_timer_t *t)
+{
+    (void)t;
+    hal_rot_t want = hal_orient_wanted();
+    if (want == hal_display_rotation()) return;
+    if (s_busy || s_sleep || s_orient_hold || deck_boot_active() || deck_modal_active() || deck_update_flashing()) {
+        return;
+    }
+    apply_rotation(want);
+}
+
+static void orient_async(void *u)
+{
+    (void)u;
+    orient_poll(NULL);
+}
+
+/* Deferred: usually called from a SYSTEM control that the rebuild deletes. */
+void deck_shell_orient_now(void)
+{
+    if (hal_orient_supported()) lv_async_call(orient_async, NULL);
+}
+
+void deck_shell_orient_hold(bool hold) { s_orient_hold = hold; }
 
 /* ---- Keys ---------------------------------------------------------------- */
 
@@ -297,5 +356,13 @@ void deck_shell_start(bool boot_anim)
     show_home_now();
     deck_fx_scanlines(hal_cfg_get_i32("scan", 1) != 0);
     deck_shell_apply_kbd_light();
+    if (hal_orient_supported()) {
+        /* A fixed setting turns before the POST (which holds AUTO back).
+         * The device HAL may already have turned the display in hal_init;
+         * then the UI above was built at that size and needs no rebuild. */
+        hal_rot_t want = hal_orient_wanted();
+        if (hal_orient_mode() != HAL_ORIENT_AUTO && want != hal_display_rotation()) apply_rotation(want);
+        lv_timer_create(orient_poll, 250, NULL);
+    }
     if (boot_anim) deck_boot_run();
 }

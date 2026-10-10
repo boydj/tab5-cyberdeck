@@ -400,9 +400,10 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_t *hero = deck_panel(root, DECK_CUT_TL | DECK_CUT_BR, 22);
     lv_obj_set_size(hero, DECK_LP(430, LV_PCT(100)), DECK_LP(LV_PCT(100), LV_SIZE_CONTENT));
     deck_panel_set_tab(hero, true);
-    lv_obj_set_style_pad_all(hero, 24, 0);
+    /* SHORT: the same rows, packed tighter to fit 472 px. */
+    lv_obj_set_style_pad_all(hero, DECK_LSP(24, 18, 24), 0);
     lv_obj_set_flex_flow(hero, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(hero, 10, 0);
+    lv_obj_set_style_pad_row(hero, DECK_LSP(10, 4, 10), 0);
 
     s_ui.place = deck_icon_text(hero, ICON_PIN, "", g_font.mono_m, g_pal.text);
     lv_obj_t *now = deck_box(hero);
@@ -415,7 +416,7 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     s_ui.cond  = deck_label(hero, g_font.disp_m, g_pal.accent2, "");
     s_ui.range = deck_label(hero, g_font.mono_m, g_pal.dim, "");
     lv_obj_t *sec = deck_section(hero, "NOW");
-    lv_obj_set_style_margin_top(sec, 6, 0);
+    lv_obj_set_style_margin_top(sec, DECK_LSP(6, 4, 6), 0);
     s_ui.kv[KV_HUMID]   = kv_row(hero, ICON_HUMIDITY, "HUMIDITY");
     s_ui.kv[KV_WIND]    = kv_row(hero, WX_WIND, "WIND");
     s_ui.kv[KV_PRESS]   = kv_row(hero, ICON_GAUGE, "PRESSURE");

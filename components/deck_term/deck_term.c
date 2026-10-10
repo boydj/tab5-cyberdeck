@@ -10,8 +10,12 @@
 #include "term_glyphs.h"
 #include "vterm.h"
 
-/* Portrait (568 px wide, ~331 ppi): 14 px gives 8 px cells, 69 columns. */
-#define FONT_PX DECK_LP(16, 14)
+/* Cell font size for the screen's shape. Tab5: 16 px, 10 x 23 cells,
+ * 126 x 24. T-Display portrait (568 px wide, ~331 ppi): 14 px, 8 x 20 cells,
+ * 69 columns. T-Display on its side (1232 x 568): 16 px again, about 122 x
+ * 18 (the line height is 2.2 cell widths, so more rows would cost columns). */
+#define FONT_PX DECK_LSP(16, 16, 14)
+#define MAX_FONTS 3
 #define SB_DEFAULT 2000
 #define BLINK_MS 530
 #define PAD 6
@@ -43,9 +47,33 @@ struct deck_term {
     bool blink_on;
     lv_timer_t *blink;
     bool sticky_ctrl;
+    bool fit_pending; /* a size change is waiting for the layout to settle */
 };
 
-static const lv_font_t *s_font;
+/* Fonts are created on first use and kept: the screen can turn back and
+ * forth while a session is open, so each size is needed again. */
+static struct {
+    int px;
+    const lv_font_t *font;
+} s_fonts[MAX_FONTS];
+
+static const lv_font_t *term_font(int px)
+{
+    int free_slot = -1;
+    for (int i = 0; i < MAX_FONTS; i++) {
+        if (s_fonts[i].font && s_fonts[i].px == px) return s_fonts[i].font;
+        if (!s_fonts[i].font && free_slot < 0) free_slot = i;
+    }
+    size_t sz = 0;
+    const uint8_t *data = deck_asset(DECK_ASSET_FONT_TERM, &sz);
+    const lv_font_t *f  = data ? lv_tiny_ttf_create_data_ex(data, sz, px, LV_FONT_KERNING_NONE, 256) : NULL;
+    if (f == NULL) return g_font.mono_s; /* not cached: try again next time */
+    if (free_slot >= 0) {
+        s_fonts[free_slot].px   = px;
+        s_fonts[free_slot].font = f;
+    }
+    return f;
+}
 
 /* Cyberpunk-leaning ANSI palette: readable on near-black. */
 static const uint32_t s_palette[16] = {
@@ -413,6 +441,38 @@ static void output_cb(const char *s, size_t len, void *user)
 
 /* ---- Geometry ------------------------------------------------------------ */
 
+static void set_font(deck_term_t *t, const lv_font_t *font, int px)
+{
+    t->font = font;
+    lv_font_glyph_dsc_t g;
+    t->cw = lv_font_get_glyph_dsc(t->font, &g, 'M', 0) ? g.adv_w : px / 2;
+    if (t->cw < 1) t->cw = 1;
+    t->ch = lv_font_get_line_height(t->font) + 2;
+}
+
+/* Widen the scrollback ring to `w` cells per line (the grid got wider than
+ * any it had, e.g. after turning to landscape). Lines keep their slots; the
+ * new cells are blank. */
+static void sb_grow(deck_term_t *t, int w)
+{
+    if (t->sb == NULL || w <= t->sb_w) return;
+    sb_cell_t *nb = (sb_cell_t *)calloc((size_t)t->sb_cap * w, sizeof(sb_cell_t));
+    if (nb == NULL) return; /* keep the narrow ring: lines are cut, nothing breaks */
+    for (int line = 0; line < t->sb_cap; line++) {
+        sb_cell_t *dst = &nb[(size_t)line * w];
+        memcpy(dst, &t->sb[(size_t)line * t->sb_w], (size_t)t->sb_w * sizeof(sb_cell_t));
+        for (int i = t->sb_w; i < w; i++) {
+            dst[i].attr  = 8; /* default background, like a short pushed line */
+            dst[i].fg[0] = (TERM_FG >> 16) & 0xFF;
+            dst[i].fg[1] = (TERM_FG >> 8) & 0xFF;
+            dst[i].fg[2] = TERM_FG & 0xFF;
+        }
+    }
+    free(t->sb);
+    t->sb   = nb;
+    t->sb_w = w;
+}
+
 static void relayout(deck_term_t *t)
 {
     int32_t w = lv_obj_get_width(t->obj), h = lv_obj_get_height(t->obj);
@@ -422,6 +482,7 @@ static void relayout(deck_term_t *t)
     t->x0 = (int)((w - cols * t->cw) / 2);
     t->y0 = (int)((h - rows * t->ch) / 2);
     if (cols == t->cols && rows == t->rows) return;
+    sb_grow(t, cols + 1);
     t->cols = cols;
     t->rows = rows;
     vterm_set_size(t->vt, rows, cols);
@@ -430,7 +491,26 @@ static void relayout(deck_term_t *t)
     if (t->cfg.resized) t->cfg.resized(cols, rows, t->cfg.user);
 }
 
-static void size_event(lv_event_t *e) { relayout((deck_term_t *)lv_event_get_user_data(e)); }
+static void fit_async(void *p)
+{
+    deck_term_t *t    = (deck_term_t *)p;
+    t->fit_pending    = false;
+    relayout(t);
+}
+
+/* The widget changed size. A rotation lays the screen out more than once
+ * on its way to the final size (status bar first, then the module), so the
+ * grid follows once things have settled: one resize for the emulator and
+ * one window-change for the remote, never a squeezed intermediate that
+ * would cut the lines on screen. */
+static void size_event(lv_event_t *e)
+{
+    deck_term_t *t = (deck_term_t *)lv_event_get_user_data(e);
+    if (!t->fit_pending) {
+        t->fit_pending = true;
+        lv_async_call(fit_async, t);
+    }
+}
 
 static void blink_tick(lv_timer_t *tm)
 {
@@ -464,19 +544,10 @@ static void press_event(lv_event_t *e)
 
 deck_term_t *deck_term_create(lv_obj_t *parent, const deck_term_cfg_t *cfg)
 {
-    if (s_font == NULL) {
-        size_t sz = 0;
-        const uint8_t *data = deck_asset(DECK_ASSET_FONT_TERM, &sz);
-        s_font = data ? lv_tiny_ttf_create_data_ex(data, sz, FONT_PX, LV_FONT_KERNING_NONE, 256) : NULL;
-        if (s_font == NULL) s_font = g_font.mono_s;
-    }
-
     deck_term_t *t = (deck_term_t *)calloc(1, sizeof(deck_term_t));
     t->cfg         = *cfg;
-    t->font        = s_font;
-    lv_font_glyph_dsc_t g;
-    t->cw = lv_font_get_glyph_dsc(t->font, &g, 'M', 0) ? g.adv_w : FONT_PX / 2;
-    t->ch = lv_font_get_line_height(t->font) + 2;
+    int px         = FONT_PX;
+    set_font(t, term_font(px), px);
     t->cursor_visible = true;
     t->blink_on       = true;
 
@@ -511,7 +582,8 @@ deck_term_t *deck_term_create(lv_obj_t *parent, const deck_term_cfg_t *cfg)
     vterm_screen_reset(t->vs, 1);
 
     /* Scrollback lives in PSRAM on the device (malloc prefers it for large
-     * blocks); sized for the widest grid the screen can hold. */
+     * blocks); sized for the widest grid the screen can hold now, and
+     * widened if a rotation makes the grid wider. */
     t->sb_cap = cfg->scrollback_lines > 0 ? cfg->scrollback_lines : SB_DEFAULT;
     t->sb_w   = (HAL_SCREEN_W / t->cw) + 1;
     t->sb     = (sb_cell_t *)calloc((size_t)t->sb_cap * t->sb_w, sizeof(sb_cell_t));
@@ -525,6 +597,7 @@ deck_term_t *deck_term_create(lv_obj_t *parent, const deck_term_cfg_t *cfg)
 void deck_term_destroy(deck_term_t *t)
 {
     if (t == NULL) return;
+    if (t->fit_pending) lv_async_call_cancel(fit_async, t);
     if (t->blink) lv_timer_delete(t->blink);
     vterm_free(t->vt);
     free(t->sb);
@@ -532,6 +605,16 @@ void deck_term_destroy(deck_term_t *t)
 }
 
 lv_obj_t *deck_term_obj(deck_term_t *t) { return t->obj; }
+
+void deck_term_refit(deck_term_t *t)
+{
+    int px                = FONT_PX;
+    const lv_font_t *font = term_font(px);
+    if (font != t->font) set_font(t, font, px);
+    lv_obj_update_layout(t->obj);
+    relayout(t); /* now, at the settled size; a pending fit finds nothing left to do */
+    lv_obj_invalidate(t->obj);
+}
 
 void deck_term_feed(deck_term_t *t, const char *data, size_t len)
 {

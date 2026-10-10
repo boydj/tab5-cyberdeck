@@ -31,6 +31,9 @@
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
+#include "driver/ppa.h"
+#include "esp_cache.h"
+#include "esp_heap_caps.h"
 #include "esp_ldo_regulator.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -224,8 +227,8 @@ static bool panel_init(void)
         return false;
     }
 
-    /* Two frame buffers in PSRAM: esp_lvgl_port's tear-free direct mode
-     * draws into the hidden one and swaps on the panel's refresh. */
+    /* One frame buffer in PSRAM that the panel scans out; LVGL's finished
+     * areas are copied (and rotated) into it by the PPA, see flush_cb. */
     esp_lcd_dpi_panel_config_t dpi_cfg = {
         .virtual_channel    = 0,
         .dpi_clk_src        = MIPI_DSI_DPI_CLK_SRC_DEFAULT,
@@ -233,7 +236,7 @@ static bool panel_init(void)
         .pixel_format       = LCD_COLOR_PIXEL_FORMAT_RGB565,
         .in_color_format    = LCD_COLOR_FMT_RGB565,
         .out_color_format   = LCD_COLOR_FMT_RGB565,
-        .num_fbs            = 2,
+        .num_fbs            = 1,
         .video_timing =
             {
                 .h_size            = TDP4_LCD_W,
@@ -245,7 +248,6 @@ static bool panel_init(void)
                 .vsync_back_porch  = 120,
                 .vsync_front_porch = 80,
             },
-        .flags.use_dma2d = true,
     };
     if (esp_lcd_new_panel_dpi(dsi, &dpi_cfg, &s_lcd) != ESP_OK) {
         ESP_LOGE(TAG, "DPI panel init failed");
@@ -280,11 +282,115 @@ static bool panel_init(void)
     return true;
 }
 
+/* LVGL renders the UI in 1/8-screen strips (partial mode, two buffers in
+ * PSRAM) at the logical size: 568 x 1232 in portrait, 1232 x 568 when turned.
+ * Each finished strip goes to the panel's frame buffer through the PPA, which
+ * copies, and for landscape also rotates, in one pass. Rotation is LVGL's own
+ * (lv_display_set_rotation), so touch points are turned to match by LVGL. */
 static lv_display_t *s_disp;
+static ppa_client_handle_t s_ppa;
+static void *s_fb;
+static bool s_ppa_cw; /* the PPA turns "90 degrees" clockwise (probed; documented CCW) */
+
+#define FB_BYTES    ((size_t)TDP4_LCD_W * TDP4_LCD_H * 2)
+#define DRAW_BUF_PX ((size_t)TDP4_LCD_W * TDP4_LCD_H / 8)
+
+/* Which way does the PPA turn a 90-degree rotation? Turn a 4 x 2 test
+ * picture and see where a known pixel lands, rather than trust the docs. */
+static void ppa_probe(void)
+{
+    const size_t sz = 128;
+    uint16_t *in    = heap_caps_aligned_calloc(128, 1, sz, MALLOC_CAP_SPIRAM);
+    uint16_t *out   = heap_caps_aligned_calloc(128, 1, sz, MALLOC_CAP_SPIRAM);
+    if (in && out) {
+        for (int i = 0; i < 8; i++) in[i] = (uint16_t)(1 + i); /* pixel (x, y) = 1 + x + 4y */
+        ppa_srm_oper_config_t c = {
+            .in      = {.buffer = in, .pic_w = 4, .pic_h = 2, .block_w = 4, .block_h = 2, .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
+            .out     = {.buffer = out, .buffer_size = sz, .pic_w = 2, .pic_h = 4, .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
+            .rotation_angle = PPA_SRM_ROTATION_ANGLE_90,
+            .scale_x = 1.0f,
+            .scale_y = 1.0f,
+            .mode    = PPA_TRANS_MODE_BLOCKING,
+        };
+        if (ppa_do_scale_rotate_mirror(s_ppa, &c) == ESP_OK) {
+            esp_cache_msync(out, sz, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+            /* counterclockwise: out(0,0) = in(3,0) = 4; clockwise: out(0,0) = in(0,1) = 5 */
+            s_ppa_cw = out[0] == 5;
+            ESP_LOGI(TAG, "PPA rotate-90 probe: %s (out[0]=%u)", out[0] == 4 ? "counterclockwise" : out[0] == 5 ? "clockwise" : "unexpected", out[0]);
+        }
+    }
+    heap_caps_free(in);
+    heap_caps_free(out);
+}
+
+static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px)
+{
+    int32_t w     = lv_area_get_width(area);
+    int32_t h     = lv_area_get_height(area);
+    lv_area_t dst = *area;
+    lv_display_rotate_area(disp, &dst); /* logical strip -> its place on the panel */
+
+    /* LVGL's ROTATION_90 shows the picture turned counterclockwise on the
+     * panel (logical x runs up the panel); PPA_SRM_ROTATION_ANGLE_90 is
+     * counterclockwise unless the probe said otherwise. */
+    ppa_srm_rotation_angle_t ang = PPA_SRM_ROTATION_ANGLE_0;
+    switch (lv_display_get_rotation(disp)) {
+        case LV_DISPLAY_ROTATION_90: ang = s_ppa_cw ? PPA_SRM_ROTATION_ANGLE_270 : PPA_SRM_ROTATION_ANGLE_90; break;
+        case LV_DISPLAY_ROTATION_180: ang = PPA_SRM_ROTATION_ANGLE_180; break;
+        case LV_DISPLAY_ROTATION_270: ang = s_ppa_cw ? PPA_SRM_ROTATION_ANGLE_90 : PPA_SRM_ROTATION_ANGLE_270; break;
+        default: break;
+    }
+    ppa_srm_oper_config_t c = {
+        .in =
+            {
+                .buffer  = px,
+                .pic_w   = (uint32_t)w,
+                .pic_h   = (uint32_t)h,
+                .block_w = (uint32_t)w,
+                .block_h = (uint32_t)h,
+                .srm_cm  = PPA_SRM_COLOR_MODE_RGB565,
+            },
+        .out =
+            {
+                .buffer         = s_fb,
+                .buffer_size    = FB_BYTES,
+                .pic_w          = TDP4_LCD_W,
+                .pic_h          = TDP4_LCD_H,
+                .block_offset_x = (uint32_t)dst.x1,
+                .block_offset_y = (uint32_t)dst.y1,
+                .srm_cm         = PPA_SRM_COLOR_MODE_RGB565,
+            },
+        .rotation_angle = ang,
+        .scale_x        = 1.0f,
+        .scale_y        = 1.0f,
+        .mode           = PPA_TRANS_MODE_BLOCKING,
+    };
+    esp_err_t err = ppa_do_scale_rotate_mirror(s_ppa, &c);
+    if (err != ESP_OK) ESP_LOGE(TAG, "PPA copy %ldx%ld @%ld,%ld failed: %s", (long)w, (long)h, (long)dst.x1, (long)dst.y1, esp_err_to_name(err));
+    lv_display_flush_ready(disp);
+}
+
+/* esp_lvgl_port's task sleeps until LVGL has work; tell it when a redraw is
+ * requested (its own displays do this; ours is not one of them). */
+static void disp_wake_cb(lv_event_t *e)
+{
+    (void)e;
+    lvgl_port_task_wake(LVGL_PORT_EVENT_DISPLAY, NULL);
+}
 
 static bool display_init(void)
 {
     if (!panel_init()) return false;
+    if (esp_lcd_dpi_panel_get_frame_buffer(s_lcd, 1, &s_fb) != ESP_OK || s_fb == NULL) {
+        ESP_LOGE(TAG, "no DPI frame buffer");
+        return false;
+    }
+    ppa_client_config_t ppa_cfg = {.oper_type = PPA_OPERATION_SRM};
+    if (ppa_register_client(&ppa_cfg, &s_ppa) != ESP_OK) {
+        ESP_LOGE(TAG, "PPA client register failed");
+        return false;
+    }
+    ppa_probe();
 
     lvgl_port_cfg_t lvgl_cfg   = ESP_LVGL_PORT_INIT_CONFIG();
     lvgl_cfg.task_priority     = 6;
@@ -298,32 +404,36 @@ static bool display_init(void)
         return false;
     }
 
-    lvgl_port_display_cfg_t disp_cfg = {
-        .io_handle     = s_lcd_io,
-        .panel_handle  = s_lcd,
-        .buffer_size   = TDP4_LCD_W * TDP4_LCD_H,
-        .hres          = TDP4_LCD_W,
-        .vres          = TDP4_LCD_H,
-        .color_format  = LV_COLOR_FORMAT_RGB565,
-        .flags =
-            {
-                .buff_spiram = 1,
-                .direct_mode = 1,
-            },
-    };
-    lvgl_port_display_dsi_cfg_t dsi_cfg = {
-        .flags.avoid_tearing = 1,
-    };
-    s_disp = lvgl_port_add_disp_dsi(&disp_cfg, &dsi_cfg);
-    if (s_disp == NULL) {
-        ESP_LOGE(TAG, "lvgl_port_add_disp_dsi failed");
+    size_t bytes = DRAW_BUF_PX * 2;
+    void *buf1   = heap_caps_aligned_alloc(64, bytes, MALLOC_CAP_SPIRAM);
+    void *buf2   = heap_caps_aligned_alloc(64, bytes, MALLOC_CAP_SPIRAM);
+    if (buf1 == NULL || buf2 == NULL) {
+        ESP_LOGE(TAG, "no memory for LVGL draw buffers");
         return false;
     }
+    lvgl_port_lock(0);
+    s_disp = lv_display_create(TDP4_LCD_W, TDP4_LCD_H);
+    lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_buffers(s_disp, buf1, buf2, bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_flush_cb(s_disp, flush_cb);
+    lv_display_add_event_cb(s_disp, disp_wake_cb, LV_EVENT_INVALIDATE_AREA, NULL);
+    lv_display_add_event_cb(s_disp, disp_wake_cb, LV_EVENT_REFR_REQUEST, NULL);
+    lvgl_port_unlock();
 
     if (!tdp4_touch_init(s_main_bus, s_disp)) {
         ESP_LOGW(TAG, "GT9895 touch not found (TFT board? only the AMOLED is supported)");
     }
     return true;
+}
+
+hal_rot_t hal_display_rotation(void) { return s_disp ? (hal_rot_t)lv_display_get_rotation(s_disp) : HAL_ROT_0; }
+
+void hal_display_set_rotation(hal_rot_t rot)
+{
+    if (s_disp == NULL || rot == hal_display_rotation()) return;
+    ESP_LOGI(TAG, "rotation %d -> %d", (int)hal_display_rotation() * 90, (int)rot * 90);
+    lv_display_set_rotation(s_disp, (lv_display_rotation_t)rot);
+    lv_obj_invalidate(lv_screen_active()); /* repaint everything at the new angle */
 }
 
 static uint8_t s_brightness = 80;
@@ -372,6 +482,47 @@ void hal_display_power(bool on)
 
 bool hal_lvgl_lock(uint32_t timeout_ms) { return lvgl_port_lock(timeout_ms); }
 void hal_lvgl_unlock(void) { lvgl_port_unlock(); }
+
+/* ---- Orientation ---------------------------------------------------------- */
+
+static bool s_orient_ok; /* a motion sensor answered */
+
+bool hal_orient_supported(void) { return true; }
+
+/* The setting, read from NVS once: the shell asks four times a second. */
+static int8_t s_orient_mode = -1;
+
+hal_orient_mode_t hal_orient_mode(void)
+{
+    if (s_orient_mode < 0) {
+        int32_t m     = hal_cfg_get_i32("orient", HAL_ORIENT_AUTO);
+        s_orient_mode = (int8_t)((m >= 0 && m < HAL_ORIENT_MODE_COUNT) ? m : HAL_ORIENT_AUTO);
+    }
+    return (hal_orient_mode_t)s_orient_mode;
+}
+
+void hal_orient_set_mode(hal_orient_mode_t mode)
+{
+    s_orient_mode = (int8_t)mode;
+    hal_cfg_set_i32("orient", (int32_t)mode);
+}
+
+/* Docked, the keyboard sits below the portrait screen, so AUTO only turns
+ * the screen while it is off. */
+hal_rot_t hal_orient_wanted(void)
+{
+    switch (hal_orient_mode()) {
+        case HAL_ORIENT_PORTRAIT: return HAL_ROT_0;
+        case HAL_ORIENT_LANDSCAPE: return HAL_ROT_90;
+        case HAL_ORIENT_LANDSCAPE_FLIP: return HAL_ROT_270;
+        default: break;
+    }
+    if (!s_orient_ok || tdp4_kbd_present()) return HAL_ROT_0;
+    return tdp4_orient_sensed();
+}
+
+const char *hal_orient_sensor(void) { return tdp4_orient_sensor(); }
+bool hal_orient_calibrate(int step) { return s_orient_ok && tdp4_orient_calibrate(step); }
 
 /* ---- Keyboard ------------------------------------------------------------- */
 
@@ -584,5 +735,14 @@ bool hal_init(void)
 
     s_key_q = xQueueCreate(64, sizeof(hal_key_t));
     if (s_kbd_bus) tdp4_kbd_start(s_kbd_bus, s_key_q);
+
+    s_orient_ok = tdp4_orient_start(s_audio_bus);
+    /* Start in the wanted rotation if it is fixed (manual setting); with
+     * AUTO the shell turns the screen once the sensor has settled. */
+    if (hal_orient_mode() != HAL_ORIENT_AUTO) {
+        hal_lvgl_lock(0);
+        hal_display_set_rotation(hal_orient_wanted());
+        hal_lvgl_unlock();
+    }
     return true;
 }

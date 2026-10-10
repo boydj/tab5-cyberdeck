@@ -25,8 +25,8 @@
 #include "deck_widgets.h"
 
 #define MAX_ROWS 200
-#define VIS_H DECK_LP(170, 150)
-#define BAR_W DECK_LP(30, 24) /* spectrum bar width */
+#define VIS_H DECK_LSP(170, 96, 150) /* spectrum height (SHORT: room for the rest) */
+#define BAR_W DECK_LP(30, 24)          /* spectrum bar width */
 
 typedef struct {
     char name[96];
@@ -45,6 +45,7 @@ static struct {
     lv_obj_t *vol, *vol_val;
     lv_obj_t *out;
     lv_obj_t *rows[MAX_ROWS];
+    int32_t vis_h; /* VIS_H when built */
     lv_timer_t *timer;
     int shown_index;
     char shown_dir[192];
@@ -204,7 +205,7 @@ static void refresh(lv_timer_t *t)
     uint8_t lv[PLAYER_BANDS];
     player_levels(lv);
     for (int i = 0; i < PLAYER_BANDS; i++) {
-        int h = st == PLAYER_PLAYING ? 4 + lv[i] * (VIS_H - 4) / 255 : 4;
+        int h = st == PLAYER_PLAYING ? 4 + lv[i] * (s_ui.vis_h - 4) / 255 : 4;
         lv_obj_set_height(s_ui.bars[i], h);
     }
 
@@ -268,7 +269,7 @@ static void ctl_clicked(lv_event_t *e)
 static lv_obj_t *ctl_button(lv_obj_t *parent, const char *icon, intptr_t id, int32_t w)
 {
     lv_obj_t *b = deck_button(parent, icon, g_font.icon_m);
-    lv_obj_set_size(b, w, 72);
+    lv_obj_set_size(b, w, DECK_LSP(72, 60, 72));
     lv_obj_set_style_pad_all(b, 0, 0);
     if (HAL_PORTRAIT) {
         /* Share the narrow row by weight (w) instead of deck_button's 96 px minimum. */
@@ -346,9 +347,9 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
         lv_obj_set_height(right, LV_PCT(100));
         lv_obj_set_flex_grow(right, 1);
     }
-    lv_obj_set_style_pad_all(right, DECK_LP(26, 22), 0);
+    lv_obj_set_style_pad_all(right, DECK_LSP(26, 20, 22), 0);
     lv_obj_set_flex_flow(right, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(right, 12, 0);
+    lv_obj_set_style_pad_row(right, DECK_LSP(12, 8, 12), 0);
     deck_section(right, "NOW PLAYING");
     s_ui.title = deck_label(right, g_font.disp_m, g_pal.accent, "");
     lv_obj_set_width(s_ui.title, LV_PCT(100));
@@ -358,7 +359,8 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_label_set_long_mode(s_ui.artist, LV_LABEL_LONG_MODE_DOTS);
 
     lv_obj_t *vis = deck_box(right);
-    lv_obj_set_size(vis, LV_PCT(100), VIS_H);
+    s_ui.vis_h    = VIS_H;
+    lv_obj_set_size(vis, LV_PCT(100), s_ui.vis_h);
     lv_obj_set_flex_flow(vis, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(vis, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
     for (int i = 0; i < PLAYER_BANDS; i++) {

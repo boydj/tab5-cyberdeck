@@ -45,19 +45,78 @@ void hal_lvgl_unlock(void);
 /* ---- Display ------------------------------------------------------------- */
 
 #ifdef DECK_BOARD_TDISPLAY_P4
-/* LilyGo T-Display P4, 4.1" AMOLED, native portrait. The K270 keyboard docks
- * below the screen, so the UI runs portrait: no rotation, no PPA pass. */
-#define HAL_SCREEN_W 568
-#define HAL_SCREEN_H 1232
+/* LilyGo T-Display P4, 4.1" AMOLED, native portrait. With the K270 keyboard
+ * docked below the screen it runs portrait; undocked it can turn to
+ * landscape (1232 x 568), see Orientation below. */
+#define HAL_PANEL_W 568
+#define HAL_PANEL_H 1232
 #else
-#define HAL_SCREEN_W 1280
-#define HAL_SCREEN_H 720
+#define HAL_PANEL_W 1280
+#define HAL_PANEL_H 720
 #endif
 
+/* The screen as the UI sees it right now, after any rotation. Before the
+ * display exists this is the panel's own size. Layout code must call these
+ * (or HAL_SCREEN_W/H, HAL_PORTRAIT) when it builds a screen, not cache them:
+ * after a rotation the shell rebuilds the UI at the new size. */
+int hal_screen_w(void);
+int hal_screen_h(void);
+#define HAL_SCREEN_W hal_screen_w()
+#define HAL_SCREEN_H hal_screen_h()
+
 /* True when the screen is taller than wide (layouts stack instead of row). */
-#define HAL_PORTRAIT (HAL_SCREEN_H > HAL_SCREEN_W)
+#define HAL_PORTRAIT (hal_screen_h() > hal_screen_w())
 
 void hal_backlight_set(uint8_t percent);   /* 3..100 (never fully dark) */
+
+/* ---- Orientation --------------------------------------------------------- */
+
+/* Screen rotation, numerically equal to lv_display_rotation_t. Named by
+ * how the device is held: HAL_ROT_90 = turned clockwise onto its side (the
+ * left edge of the portrait screen on top), HAL_ROT_270 = turned
+ * counterclockwise (right edge on top). */
+typedef enum {
+    HAL_ROT_0   = 0,
+    HAL_ROT_90  = 1,
+    HAL_ROT_180 = 2,
+    HAL_ROT_270 = 3,
+} hal_rot_t;
+
+/* The ROTATION setting (persisted). AUTO follows the motion sensor, but
+ * stays portrait while the keyboard is docked. */
+typedef enum {
+    HAL_ORIENT_AUTO,
+    HAL_ORIENT_PORTRAIT,
+    HAL_ORIENT_LANDSCAPE,        /* HAL_ROT_90 */
+    HAL_ORIENT_LANDSCAPE_FLIP,   /* HAL_ROT_270 */
+    HAL_ORIENT_MODE_COUNT,
+} hal_orient_mode_t;
+
+/* False on boards that never rotate (Tab5): everything below is then inert
+ * (rotation stays HAL_ROT_0). */
+bool              hal_orient_supported(void);
+hal_orient_mode_t hal_orient_mode(void);
+void              hal_orient_set_mode(hal_orient_mode_t mode);
+
+/* The rotation the screen should have now, from the setting, the keyboard
+ * and the (debounced) motion sensor. Cheap; the shell polls it. */
+hal_rot_t hal_orient_wanted(void);
+
+/* Current rotation, and changing it. hal_display_set_rotation() must run on
+ * the LVGL task (or with the LVGL lock held); it changes hal_screen_w/h and
+ * leaves rebuilding the UI to the caller. */
+hal_rot_t hal_display_rotation(void);
+void      hal_display_set_rotation(hal_rot_t rot);
+
+/* Motion sensor name ("ICM20948", "QMI8658", "SIM"), or NULL if none. */
+const char *hal_orient_sensor(void);
+
+/* Teach the sensor which way is up, in two steps while the user holds the
+ * deck still: step 0 upright in portrait, step 1 turned clockwise onto its
+ * side (landscape) at about the same lean. Returns false if the reading was
+ * unusable (moving, lying flat, lean changed, or not a quarter turn); step 1
+ * saves the result. Step -1 cancels after step 0. Blocks ~150 ms. */
+bool hal_orient_calibrate(int step);
 
 /* Screen sleep: off turns the backlight fully off and the keyboard LEDs
  * out; on restores the saved brightness and keyboard light. */

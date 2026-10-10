@@ -479,7 +479,10 @@ static void worker(void *arg)
             sent += (size_t)n;
         }
         if (s_resize) {
-            if (libssh2_channel_request_pty_size(ch, s_cols, s_rows) != LIBSSH2_ERROR_EAGAIN) s_resize = false;
+            /* Clear the flag before reading the size, so a resize that lands
+             * while this request is in flight is sent next time round. */
+            s_resize = false;
+            if (libssh2_channel_request_pty_size(ch, s_cols, s_rows) == LIBSSH2_ERROR_EAGAIN) s_resize = true;
         }
         int next = 0;
         libssh2_keepalive_send(sess, &next);

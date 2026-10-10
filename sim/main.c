@@ -11,6 +11,9 @@
  *            [--shot MS:FILE.ppm]...
  *            [--cfg KEY=INT]... [--cfgs KEY=STR]...   preset settings (e.g. --cfg scan=0)
  *            [--stub]   add an OFFLINE module to exercise the "module offline" screen
+ *            [--no-kbd]  keyboard undocked (on-screen keyboards, AUTO rotation)
+ *            [--tilt MS:DEG]...  T-Display build: the deck is now held at 0, 90
+ *                       (turned clockwise) or 270 (counterclockwise); F8 in the window
  * Environment: DECK_SIM_NO_KBD=1 (no keyboard: on-screen keyboards),
  *              SIM_HOSTKEY=new|changed (host key dialogs), SIM_OTA_NEWER=0.
  */
@@ -39,7 +42,7 @@
 
 /* ---- Scripted events (headless) ------------------------------------------ */
 
-typedef enum { EV_KEY, EV_TAP, EV_SHOT } ev_type_t;
+typedef enum { EV_KEY, EV_TAP, EV_SHOT, EV_TILT } ev_type_t;
 
 typedef struct {
     uint32_t at;
@@ -160,13 +163,25 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px)
     lv_display_flush_ready(disp);
 }
 
+static void *s_fb; /* headless frame (direct mode), sized for either orientation */
+static size_t s_fb_size;
+
+/* After a rotation the headless frame keeps its memory but its rows change
+ * length, so hand it to LVGL again. The SDL window resizes by itself. */
+void sim_display_resized(void)
+{
+    if (s_fb) lv_display_set_buffers(lv_display_get_default(), s_fb, NULL, s_fb_size, LV_DISPLAY_RENDER_MODE_DIRECT);
+}
+
 static int run_headless(void)
 {
     lv_tick_set_cb(fake_tick);
-    lv_display_t *disp = lv_display_create(HAL_SCREEN_W, HAL_SCREEN_H);
+    lv_display_t *disp = lv_display_create(HAL_PANEL_W, HAL_PANEL_H);
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
-    size_t size = (size_t)HAL_SCREEN_W * HAL_SCREEN_H * 2;
-    void *fb    = malloc(size);
+    s_fb_size = (size_t)HAL_PANEL_W * HAL_PANEL_H * 2;
+    s_fb      = malloc(s_fb_size);
+    void *fb  = s_fb;
+    size_t size = s_fb_size;
     lv_display_set_buffers(disp, fb, NULL, size, LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(disp, flush_cb);
 
@@ -188,6 +203,8 @@ static void headless_loop(lv_display_t *disp)
             if (e->type == EV_KEY) {
                 if (e->at == s_now) sim_push_key(e->code, e->mods, true);
                 if (e->at + 60 == s_now) sim_push_key(0, e->mods, false);
+            } else if (e->type == EV_TILT && e->at == s_now) {
+                sim_set_tilt(e->x);
             } else if (e->type == EV_TAP && e->at == s_now) {
                 s_touch_x     = e->x;
                 s_touch_y     = e->y;
@@ -228,6 +245,14 @@ static int key_watch(void *ud, SDL_Event *ev)
     (void)ud;
     if (ev->type != SDL_KEYDOWN && ev->type != SDL_KEYUP) return 0;
     SDL_Scancode sc = ev->key.keysym.scancode;
+    if (sc == SDL_SCANCODE_F8) { /* F8: tilt the pretend deck 0 -> 90 -> 270 -> 0 */
+        static int tilt;
+        if (ev->type == SDL_KEYDOWN && !ev->key.repeat) {
+            tilt = tilt == 0 ? 1 : tilt == 1 ? 3 : 0;
+            sim_set_tilt(tilt);
+        }
+        return 0;
+    }
     if (sc >= SDL_SCANCODE_LCTRL || sc == SDL_SCANCODE_CAPSLOCK) return 0; /* modifiers are not keys */
     if (ev->type == SDL_KEYDOWN && ev->key.repeat) return 0;              /* the real keyboard never repeats */
     uint16_t m   = ev->key.keysym.mod;
@@ -260,6 +285,16 @@ int main(int argc, char **argv)
             i++;
         } else if (strcmp(a, "--stub") == 0) {
             stub = true;
+        } else if (strcmp(a, "--no-kbd") == 0) {
+            setenv("DECK_SIM_NO_KBD", "1", 1); /* undocked: AUTO rotation follows --tilt */
+        } else if (strcmp(a, "--tilt") == 0 && s_ev_n < 512) {
+            /* --tilt MS:DEG  (0, 90 = turned clockwise, 270 = counterclockwise) */
+            ev_t *e = &s_ev[s_ev_n++];
+            e->at   = (uint32_t)strtoul(v, NULL, 10) / 5 * 5;
+            e->type = EV_TILT;
+            const char *deg = strchr(v, ':');
+            e->x    = deg ? atoi(deg + 1) / 90 : 0;
+            i++;
         } else if (strcmp(a, "--cfg") == 0 || strcmp(a, "--cfgs") == 0) {
             char key[32];
             const char *eq = strchr(v, '=');
@@ -314,7 +349,7 @@ int main(int argc, char **argv)
         run_headless();
         disp = lv_display_get_default();
     } else {
-        disp = lv_sdl_window_create(HAL_SCREEN_W, HAL_SCREEN_H);
+        disp = lv_sdl_window_create(HAL_PANEL_W, HAL_PANEL_H);
         lv_sdl_window_set_title(disp, "DECK//OS sim");
         lv_sdl_mouse_create();
         SDL_AddEventWatch(key_watch, NULL);

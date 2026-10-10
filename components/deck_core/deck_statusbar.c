@@ -21,7 +21,8 @@
 #include "deck_update.h"
 #include "deck_widgets.h"
 
-/* Portrait rows (DECK_STATUSBAR_H is 92 there). */
+/* Portrait rows (DECK_STATUSBAR_H is 92 there). Landscape, wide or short,
+ * keeps the single 56 px row. */
 #define BAR_ROW1_H 50
 #define BAR_ROW2_Y 50
 #define BAR_ROW2_H 38
@@ -102,13 +103,11 @@ static void set_indicator(lv_obj_t *row, const char *icon, const char *text, lv_
     deck_icon_text_set(row, icon, text, color);
 }
 
-#if HAL_PORTRAIT
 /* Icon-only indicators (all but the battery) when the row is crowded. */
 static void set_compact(bool on)
 {
-    static int8_t s_on = -1; /* runs every second: only touch styles on a change */
-    if (s_on == (int8_t)on && lv_obj_get_style_pad_column(s_right, 0) == (on ? 14 : 18)) return;
-    s_on = (int8_t)on;
+    int32_t gap = on ? 14 : DECK_LP(22, 18);
+    if (lv_obj_get_style_pad_column(s_right, 0) == gap) return; /* runs every second: only on a change */
     lv_obj_t *rows[] = {s_upd, s_music, s_link, s_kbd, s_sd, s_net};
     for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
         lv_obj_t *text = lv_obj_get_child(rows[i], 1);
@@ -118,9 +117,8 @@ static void set_compact(bool on)
             lv_obj_remove_flag(text, LV_OBJ_FLAG_HIDDEN);
         }
     }
-    lv_obj_set_style_pad_column(s_right, on ? 14 : 18, 0);
+    lv_obj_set_style_pad_column(s_right, gap, 0);
 }
-#endif
 
 static void refresh(lv_timer_t *t)
 {
@@ -189,10 +187,10 @@ static void refresh(lv_timer_t *t)
                       p.percent <= 15 && !p.charging ? g_pal.danger : g_pal.accent);
     }
 
-#if HAL_PORTRAIT
-    /* Portrait: the date shares the second row with the indicators. When
-     * they crowd it, shorten the date, drop it, then show icons only (the
-     * battery keeps its percentage). */
+    /* When the indicators crowd the date (UPD, PLAY and LINK up), shorten
+     * the date, drop it, then show icons only (the battery keeps its
+     * percentage). Portrait: the date shares the second row with the
+     * indicators. Landscape: the indicators reach the clock in the centre. */
     const char *forms[] = {date_full, date_short, NULL, NULL};
     for (int i = 0; i < 4; i++) {
         if (forms[i]) {
@@ -203,24 +201,13 @@ static void refresh(lv_timer_t *t)
         }
         set_compact(i == 3);
         lv_obj_update_layout(s_bar);
-        int32_t left_edge = forms[i] ? lv_obj_get_x2(s_date) + 20 : 16;
-        if (left_edge < lv_obj_get_x(s_right)) break;
-    }
-#else
-    /* With UPD and LINK up the indicators reach the centre: shorten the
-     * date, then drop it, rather than overlap. */
-    const char *forms[] = {date_full, date_short, NULL};
-    for (int i = 0; i < 3; i++) {
-        if (forms[i]) {
-            lv_obj_remove_flag(s_date, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(s_date, forms[i]);
-        } else {
-            lv_obj_add_flag(s_date, LV_OBJ_FLAG_HIDDEN);
+        if (HAL_PORTRAIT) {
+            int32_t left_edge = forms[i] ? lv_obj_get_x2(s_date) + 20 : 16;
+            if (left_edge < lv_obj_get_x(s_right)) break;
+        } else if (lv_obj_get_x2(s_mid) + 24 < lv_obj_get_x(s_right)) {
+            break;
         }
-        lv_obj_update_layout(s_bar);
-        if (lv_obj_get_x2(s_mid) + 24 < lv_obj_get_x(s_right)) break;
     }
-#endif
 }
 
 static lv_obj_t *indicator(lv_obj_t *parent)

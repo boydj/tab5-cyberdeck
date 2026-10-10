@@ -239,6 +239,8 @@ idf.py -B build-tdisplay_p4 -DDECK_BOARD=tdisplay_p4 -p /dev/cu.usbmodem* flash 
 
 Needs ESP-IDF 5.5.3 or newer (pre-v3 chip revision support; LilyGo ships
 ESP32-P4 rev 1.x). The image is `deck_tdisplay_p4.bin`.
+Settings land in `sdkconfig.tdisplay_p4`; delete it after pulling changes
+to `sdkconfig.defaults*`, since an existing sdkconfig keeps its old values.
 
 - **Wi-Fi** needs LilyGo's ESP-Hosted network adapter (2.12.x) on the C6, the
   firmware LilyGo's factory image (LilygoBox) installs. A C6 still running
@@ -247,15 +249,24 @@ ESP32-P4 rev 1.x). The image is `deck_tdisplay_p4.bin`.
 - **Keyboard:** Fn gives the symbols printed on the keys, Fn+arrows are
   Home/End/PgUp/PgDn, Fn+Backspace is Delete, the mic key is F12. Caps Lock
   lights LED 1. Power both halves off before docking or undocking.
-- **Not supported yet:** the TFT variant, LoRa, GPS, camera, Ethernet, IMU,
+- **Rotation:** SYSTEM > ROTATION picks AUTO, PORTRAIT, LANDSCAPE or
+  LANDSCAPE FLIPPED (1232 x 568). AUTO follows the motion sensor while the
+  keyboard is undocked and stays portrait while it is docked. The sensor's
+  axes are learned the first time the deck is held docked in portrait;
+  CALIBRATE (two still poses) sets them directly if AUTO turns the wrong way. TERMINAL and NOTES keep an open
+  session or document across a turn; other modules restart at the new size.
+- **Not supported yet:** the TFT variant, LoRa, GPS, camera, Ethernet, IMU
+  (beyond orientation),
   the keyboard's CC1101/nRF24/NFC radios (kept unpowered), and battery
   gauge calibration (the BQ27220 keeps whatever profile it already has).
 - **OTA** only installs release assets named `*-ota-tdisplay-p4.bin`, and the
   image carries its own project name, so a Tab5 and a T-Display never take
   each other's builds.
 
-The simulator renders the portrait layout with
-`cmake -S sim -B sim/build-p4 -DDECK_BOARD=tdisplay_p4`.
+The simulator renders the T-Display layouts with
+`cmake -S sim -B sim/build-p4 -DDECK_BOARD=tdisplay_p4`; `--no-kbd` undocks
+the keyboard, and `--tilt MS:DEG` (or F8 in the window) turns the pretend
+deck for AUTO rotation.
 
 ## Desktop simulator
 

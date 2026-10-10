@@ -1,7 +1,8 @@
 /*
  * SYSTEM module, three columns (stacked in one scrolling column on a
- * portrait screen):
- *   DISPLAY   brightness, scanlines, boot POST, accent
+ * portrait screen; on a short landscape screen the columns scroll):
+ *   DISPLAY   brightness, scanlines, boot POST, accent; ROTATION on boards
+ *             that turn (in the middle column on a short screen)
  *   NETWORK   Wi-Fi status and setup, timezone, clock (manual or NTP)
  *   SYSTEM    live hardware readout and firmware updates
  */
@@ -41,6 +42,7 @@ typedef struct {
     lv_timer_t *scan_poll;
     lv_obj_t *ota_status;
     lv_obj_t *ota_btn;
+    lv_obj_t *orient_btn;
     bool ota_want_install; /* a CHECK the user pressed: offer the install as soon as it finds one */
 } sys_ui_t;
 
@@ -58,9 +60,12 @@ static lv_obj_t *column_panel(lv_obj_t *parent, int32_t w)
 {
     lv_obj_t *p = deck_panel(parent, DECK_CUT_TL | DECK_CUT_BR, 22);
     /* Portrait: full width, as tall as its rows; the page scrolls. */
-    lv_obj_set_size(p, DECK_LP(w, LV_PCT(100)), DECK_LP(LV_PCT(100), LV_SIZE_CONTENT));
+    lv_obj_set_size(p, DECK_LP(w, LV_PCT(100)), DECK_LSP(LV_PCT(100), LV_SIZE_CONTENT, LV_SIZE_CONTENT));
+    /* Short landscape: at least the screen's height, taller if the rows
+     * need it; the columns then scroll together. */
+    if (DECK_SHORT) lv_obj_set_style_min_height(p, LV_PCT(100), 0);
     deck_panel_set_tab(p, true);
-    lv_obj_set_style_pad_all(p, DECK_LP(26, 22), 0);
+    lv_obj_set_style_pad_all(p, DECK_LSP(26, 20, 22), 0);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(p, 14, 0);
     return p;
@@ -148,6 +153,115 @@ static lv_obj_t *add_switch(lv_obj_t *row, bool on, lv_event_cb_t cb)
     return sw;
 }
 
+/* ---- Rotation (boards that turn) ----------------------------------------- */
+
+static const char *const s_orient_names[HAL_ORIENT_MODE_COUNT] = {"AUTO", "PORTRAIT", "LANDSCAPE",
+                                                                  "LANDSCAPE FLIPPED"};
+static bool s_focus_orient; /* MODE was just used: keep the focus on it across the rebuild */
+
+static const char *rotation_name(hal_rot_t r)
+{
+    switch (r) {
+        case HAL_ROT_90: return "LANDSCAPE";
+        case HAL_ROT_180: return "PORTRAIT FLIPPED";
+        case HAL_ROT_270: return "LANDSCAPE FLIPPED";
+        default: return "PORTRAIT";
+    }
+}
+
+/* Cycle AUTO -> PORTRAIT -> LANDSCAPE -> LANDSCAPE FLIPPED. If that changes
+ * the wanted rotation, the shell turns the screen and rebuilds SYSTEM. */
+static void orient_clicked(lv_event_t *e)
+{
+    hal_orient_mode_t m = (hal_orient_mode_t)(((int)hal_orient_mode() + 1) % HAL_ORIENT_MODE_COUNT);
+    hal_orient_set_mode(m);
+    lv_obj_t *b = lv_event_get_target_obj(e);
+    lv_label_set_text(lv_obj_get_child_by_type(b, 0, &lv_label_class), s_orient_names[m]);
+    /* Only when the screen is about to turn and SYSTEM gets rebuilt. */
+    s_focus_orient = hal_orient_wanted() != hal_display_rotation();
+    deck_shell_orient_now();
+}
+
+/* CALIBRATE: two still poses, one dialog each. The shell does not turn the
+ * screen while a dialog is open, so they stay put while the deck turns. */
+static void calib_show(int step, const char *problem);
+
+static void calib_answer(bool yes, void *ud)
+{
+    int step = (int)(intptr_t)ud;
+    if (!yes) { /* CANCEL or Esc: nothing is saved */
+        hal_orient_calibrate(-1);
+        return;
+    }
+    if (!hal_orient_calibrate(step)) {
+        calib_show(step, step == 0 ? "No steady reading. The deck was moving or lying flat."
+                                   : "That reading did not work: the deck was moving, lying flat, leaning a lot "
+                                     "more or less than in step 1, or not turned a quarter turn.");
+        return;
+    }
+    if (step == 0) {
+        calib_show(1, NULL);
+        return;
+    }
+    deck_modal_confirm("CALIBRATED", "Saved. AUTO rotation follows this from now on (keyboard undocked).", "OK", NULL,
+                       NULL);
+}
+
+static void calib_show(int step, const char *problem)
+{
+    static const char *const how[2] = {
+        "Hold the deck upright in portrait, screen facing you, and keep it still. Then press NEXT.",
+        "Now turn it clockwise onto its side, so the portrait screen's LEFT edge ends up on top. Keep the same "
+        "lean as before and keep it still, then press DONE.",
+    };
+    char msg[320];
+    snprintf(msg, sizeof(msg), "%s%s%s", problem ? problem : "", problem ? "\n\n" : "", how[step]);
+    deck_modal_confirm(step == 0 ? "CALIBRATE 1/2" : "CALIBRATE 2/2", msg,
+                       problem ? "RETRY" : step == 0 ? "NEXT" : "DONE", calib_answer, (void *)(intptr_t)step);
+}
+
+static void calib_clicked(lv_event_t *e)
+{
+    (void)e;
+    calib_show(0, NULL);
+}
+
+static lv_obj_t *small_button(lv_obj_t *parent, const char *text, lv_event_cb_t cb, void *ud);
+
+/* ROTATION: MODE (cycles), what the sensor is and where the screen is now,
+ * CALIBRATE, and the docked-keyboard rule. */
+static void build_rotation(lv_obj_t *col)
+{
+    lv_obj_t *rs = deck_section(col, "ROTATION");
+    lv_obj_set_style_margin_top(rs, 4, 0);
+
+    lv_obj_t *row = setting_row(col, ICON_REFRESH, "MODE");
+    s_ui.orient_btn = small_button(row, s_orient_names[hal_orient_mode()], orient_clicked, NULL);
+    lv_obj_set_style_pad_hor(s_ui.orient_btn, 16, 0); /* LANDSCAPE FLIPPED still fits beside MODE */
+    lv_obj_align(s_ui.orient_btn, LV_ALIGN_RIGHT_MID, 0, 0);
+
+    lv_obj_t *cal = deck_box(col);
+    lv_obj_set_width(cal, LV_PCT(100));
+    const char *sensor = hal_orient_sensor();
+    lv_obj_t *st       = deck_label(cal, g_font.mono_s, g_pal.dim, "");
+    lv_label_set_text_fmt(st, "SENSOR %s\nNOW %s", sensor ? sensor : "NONE", rotation_name(hal_display_rotation()));
+    lv_obj_set_style_text_line_space(st, 4, 0);
+    lv_obj_align(st, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_t *cb = small_button(cal, "CALIBRATE", calib_clicked, NULL);
+    lv_obj_align(cb, LV_ALIGN_RIGHT_MID, 0, 0);
+    if (sensor == NULL) {
+        lv_label_set_text_fmt(st, "NO SENSOR\nNOW %s", rotation_name(hal_display_rotation()));
+        lv_obj_add_state(cb, LV_STATE_DISABLED);
+        lv_group_remove_obj(cb);
+        lv_obj_remove_flag(cb, LV_OBJ_FLAG_CLICKABLE);
+    }
+
+    lv_obj_t *note = deck_label(col, g_font.mono_s, g_pal.dim,
+                                "AUTO follows the sensor while the keyboard is undocked. Docked, it stays portrait.");
+    lv_obj_set_width(note, LV_PCT(100));
+    lv_obj_set_style_text_line_space(note, 4, 0);
+}
+
 /* ---- Clock modal --------------------------------------------------------- */
 
 /* The modal took over the focus group, so closing it rebuilds the module,
@@ -156,6 +270,7 @@ static void modal_close(void)
 {
     if (s_ui.modal) {
         s_ui.modal = NULL;
+        deck_shell_orient_hold(false);
         deck_shell_rebuild();
     }
 }
@@ -220,6 +335,7 @@ static void open_clock_modal(lv_event_t *e)
     localtime_r(&now, &tm);
 
     s_ui.modal = lv_obj_create(app_root);
+    deck_shell_orient_hold(true); /* not a deck_modal: tell the shell not to turn under it */
     lv_obj_remove_style_all(s_ui.modal);
     lv_obj_add_flag(s_ui.modal, LV_OBJ_FLAG_IGNORE_LAYOUT | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(s_ui.modal, LV_PCT(100), LV_PCT(100));
@@ -570,18 +686,21 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_t *root = deck_box(parent);
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
     lv_obj_set_flex_flow(root, DECK_FLOW_SPLIT);
-    lv_obj_set_style_pad_all(root, DECK_LP(24, 16), 0);
+    lv_obj_set_style_pad_all(root, DECK_LSP(24, 16, 16), 0);
     lv_obj_set_style_pad_column(root, 20, 0);
-    if (HAL_PORTRAIT) {
-        /* Three panels do not fit one portrait screen: scroll them, and
-         * let keyboard focus pull the focused control into view. */
+    if (HAL_PORTRAIT || DECK_SHORT) {
+        /* Three panels do not fit one portrait (or short) screen: scroll
+         * them, and let keyboard focus pull the focused control into view. */
         lv_obj_set_style_pad_row(root, 16, 0);
         lv_obj_add_flag(root, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_scroll_dir(root, LV_DIR_VER);
     }
+    /* ROTATION goes under DISPLAY, or on a short screen under TIME, where
+     * the columns' heights even out. */
+    bool turns = hal_orient_supported();
 
     /* ---- DISPLAY ---- */
-    lv_obj_t *left = column_panel(root, 372);
+    lv_obj_t *left = column_panel(root, DECK_LSP(372, 368, 0));
     lv_obj_set_style_pad_row(left, 9, 0); /* seven rows plus the accent grid */
     deck_section(left, "DISPLAY");
 
@@ -618,6 +737,7 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_t *sl = small_button(row, "NOW", sleep_clicked, NULL);
     lv_obj_set_width(sl, 100);
     lv_obj_align(sl, LV_ALIGN_RIGHT_MID, 0, 0);
+    if (turns && !DECK_SHORT) build_rotation(left);
 
     deck_section(left, "ACCENT");
     lv_obj_t *sw = deck_box(left);
@@ -630,7 +750,7 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
         /* Portrait: the full-width panel takes all four swatches in a row. */
         lv_obj_set_size(b, DECK_LP(150, 106), 58);
         lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
-        if (HAL_PORTRAIT) lv_obj_add_flag(b, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+        if (HAL_PORTRAIT || DECK_SHORT) lv_obj_add_flag(b, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
         deck_panel_set_outline(b, deck_theme_accent_color(i));
         if (i == deck_theme_accent()) {
             lv_obj_add_state(b, LV_STATE_CHECKED);
@@ -649,7 +769,7 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     }
 
     /* ---- NETWORK + TIME ---- */
-    lv_obj_t *mid = column_panel(root, 392);
+    lv_obj_t *mid = column_panel(root, DECK_LSP(392, 384, 0)); /* SHORT: MODE + LANDSCAPE FLIPPED fit */
     lv_obj_set_style_pad_row(mid, 10, 0);
     deck_section(mid, "NETWORK");
     s_ui.net_state  = deck_label(mid, g_font.disp_m, g_pal.dim, "");
@@ -679,6 +799,7 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_t *set = small_button(clk, "SET", open_clock_modal, parent);
     lv_obj_align(set, LV_ALIGN_RIGHT_MID, 0, 0);
     s_ui.ntp = deck_label(mid, g_font.mono_s, g_pal.dim, "");
+    if (turns && DECK_SHORT) build_rotation(mid);
 
     /* ---- SYSTEM ---- */
     lv_obj_t *right = column_panel(root, 0);
@@ -700,7 +821,15 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
 
     refresh(NULL);
     s_ui.timer = lv_timer_create(refresh, 1000, NULL);
-    lv_group_focus_obj(slider);
+    if (s_focus_orient && s_ui.orient_btn) {
+        /* Back from turning the screen with MODE: stay on it. */
+        lv_obj_update_layout(root);
+        lv_group_focus_obj(s_ui.orient_btn);
+        lv_obj_scroll_to_view_recursive(s_ui.orient_btn, LV_ANIM_OFF);
+    } else {
+        lv_group_focus_obj(slider);
+    }
+    s_focus_orient = false;
     return true;
 }
 
@@ -709,6 +838,7 @@ static void stop(deck_app_t *self)
     (void)self;
     if (s_ui.timer) lv_timer_delete(s_ui.timer);
     if (s_ui.scan_poll) lv_timer_delete(s_ui.scan_poll);
+    if (s_ui.modal) deck_shell_orient_hold(false);
     s_ui = (sys_ui_t){0};
 }
 

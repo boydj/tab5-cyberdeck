@@ -34,10 +34,16 @@ typedef struct {
     int scrollback_lines;   /* 0 = default (2000) */
 } deck_term_cfg_t;
 
-/* Creates the widget filling `parent`. */
+/* Creates the widget filling `parent`. The cell font follows the screen's
+ * shape (deck_layout.h). */
 deck_term_t *deck_term_create(lv_obj_t *parent, const deck_term_cfg_t *cfg);
 void         deck_term_destroy(deck_term_t *t);
 lv_obj_t    *deck_term_obj(deck_term_t *t);
+
+/* The screen turned: pick the font for the new shape and fit the grid to
+ * the widget's (new) size. Screen contents and scrollback stay; `resized`
+ * fires if the grid changed. Call after the surrounding layout is updated. */
+void deck_term_refit(deck_term_t *t);
 
 void deck_term_feed(deck_term_t *t, const char *data, size_t len);
 

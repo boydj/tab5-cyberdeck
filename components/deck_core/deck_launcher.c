@@ -1,7 +1,8 @@
 /*
  * Home screen: one row of tall module tiles (big touch targets), a header,
  * and a scrolling system ticker along the bottom. On a portrait screen the
- * tiles become a column of wide rows (Up/Down move the selection too).
+ * tiles become a column of wide rows (Up/Down move the selection too); on a
+ * short landscape screen the tiles take whatever height is left.
  */
 #include "deck_launcher.h"
 
@@ -16,8 +17,9 @@
 #include "deck_theme.h"
 #include "deck_widgets.h"
 
-#define ROW_W 1232   /* content width inside the launcher padding */
-#define TILE_H 470
+#define PAD 24                     /* around the launcher */
+#define ROW_W (HAL_SCREEN_W - 2 * PAD) /* content width inside the padding */
+#define TILE_H 470                 /* WIDE; SHORT tiles fill the row's height */
 #define TILE_GAP DECK_LP(18, 12)
 #define MAX_TILES 9
 #define TICKER_H DECK_LP(52, 92) /* portrait: three lines of stats */
@@ -57,11 +59,13 @@ static void hint_clicked(lv_event_t *e)
     deck_shell_shortcuts();
 }
 
-#if !HAL_PORTRAIT
 static lv_obj_t *build_tile(lv_obj_t *parent, deck_app_t *app, int index, int32_t tile_w)
 {
-    lv_obj_t *t = deck_panel(parent, DECK_CUT_TL | DECK_CUT_BR, 22);
-    lv_obj_set_size(t, tile_w, TILE_H);
+    /* SHORT: about 360 px instead of 470; the middle block moves up. */
+    bool short_     = DECK_SHORT;
+    int32_t icon_dy = short_ ? -30 : -40, name_dy = short_ ? 46 : 52, tag_dy = short_ ? 76 : 84;
+    lv_obj_t *t     = deck_panel(parent, DECK_CUT_TL | DECK_CUT_BR, 22);
+    lv_obj_set_size(t, tile_w, short_ ? LV_PCT(100) : TILE_H);
     lv_obj_add_flag(t, LV_OBJ_FLAG_CLICKABLE);
     deck_panel_set_tab(t, true);
     deck_panel_set_hazard(t, app->eta != NULL);
@@ -81,13 +85,13 @@ static lv_obj_t *build_tile(lv_obj_t *parent, deck_app_t *app, int index, int32_
     }
 
     lv_obj_t *icon = deck_label(t, g_font.icon_l, app->eta ? g_pal.dim : g_pal.accent, app->icon);
-    lv_obj_align(icon, LV_ALIGN_CENTER, 0, -40);
+    lv_obj_align(icon, LV_ALIGN_CENTER, 0, icon_dy);
 
     lv_obj_t *name = deck_label(t, g_font.disp_m, g_pal.text, app->name);
-    lv_obj_align(name, LV_ALIGN_CENTER, 0, 52);
+    lv_obj_align(name, LV_ALIGN_CENTER, 0, name_dy);
 
     lv_obj_t *tag = deck_label(t, g_font.mono_s, g_pal.dim, app->tagline);
-    lv_obj_align(tag, LV_ALIGN_CENTER, 0, 84);
+    lv_obj_align(tag, LV_ALIGN_CENTER, 0, tag_dy);
 
     char hot[16];
     snprintf(hot, sizeof(hot), "ALT+%d", index + 1);
@@ -99,9 +103,7 @@ static lv_obj_t *build_tile(lv_obj_t *parent, deck_app_t *app, int index, int32_
     lv_obj_align(state, LV_ALIGN_BOTTOM_RIGHT, -8, -18);
     return t;
 }
-#endif
 
-#if HAL_PORTRAIT
 /* Portrait: a wide row instead of a tall tile. Same parts, laid out
  *   01  [icon]  NAME                 READY
  *               TAGLINE              ALT+1
@@ -147,7 +149,6 @@ static lv_obj_t *build_row(lv_obj_t *parent, deck_app_t *app, int index, int cou
     }
     return t;
 }
-#endif
 
 static void uptime_tick(lv_timer_t *t)
 {
@@ -210,18 +211,18 @@ static const char *stats_text(void)
     } else {
         snprintf(pwr, sizeof(pwr), "PWR %d%% %.2fV", p.percent, (double)p.volts);
     }
-#if HAL_PORTRAIT
-    /* Too narrow for one line: three short ones. */
-    snprintf(buf, sizeof(buf), "%s  //  KBD %s\nPSRAM %.1f/%.0fM  //  SRAM %lu/%luK\n%s  //  %s", net,
-             hal_kbd_present() ? "LINK" : "DOWN", (double)(si.psram_total - si.psram_free) / 1048576.0,
-             (double)si.psram_total / 1048576.0, (unsigned long)((si.heap_int_total - si.heap_int_free) / 1024),
-             (unsigned long)(si.heap_int_total / 1024), sd, pwr);
-#else
-    snprintf(buf, sizeof(buf), "%s  //  PSRAM %.1f/%.0fM  //  SRAM %lu/%luK  //  %s  //  %s  //  KBD %s", net,
-             (double)(si.psram_total - si.psram_free) / 1048576.0, (double)si.psram_total / 1048576.0,
-             (unsigned long)((si.heap_int_total - si.heap_int_free) / 1024), (unsigned long)(si.heap_int_total / 1024),
-             sd, pwr, hal_kbd_present() ? "LINK" : "DOWN");
-#endif
+    if (HAL_PORTRAIT) {
+        /* Too narrow for one line: three short ones. */
+        snprintf(buf, sizeof(buf), "%s  //  KBD %s\nPSRAM %.1f/%.0fM  //  SRAM %lu/%luK\n%s  //  %s", net,
+                 hal_kbd_present() ? "LINK" : "DOWN", (double)(si.psram_total - si.psram_free) / 1048576.0,
+                 (double)si.psram_total / 1048576.0, (unsigned long)((si.heap_int_total - si.heap_int_free) / 1024),
+                 (unsigned long)(si.heap_int_total / 1024), sd, pwr);
+    } else {
+        snprintf(buf, sizeof(buf), "%s  //  PSRAM %.1f/%.0fM  //  SRAM %lu/%luK  //  %s  //  %s  //  KBD %s", net,
+                 (double)(si.psram_total - si.psram_free) / 1048576.0, (double)si.psram_total / 1048576.0,
+                 (unsigned long)((si.heap_int_total - si.heap_int_free) / 1024),
+                 (unsigned long)(si.heap_int_total / 1024), sd, pwr, hal_kbd_present() ? "LINK" : "DOWN");
+    }
     return buf;
 }
 
@@ -277,8 +278,8 @@ void deck_launcher_create(lv_obj_t *parent)
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
     lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(root, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_all(root, 24, 0);
-    lv_obj_set_style_pad_row(root, 20, 0);
+    lv_obj_set_style_pad_all(root, PAD, 0);
+    lv_obj_set_style_pad_row(root, DECK_LSP(20, 14, 20), 0);
     lv_obj_add_event_cb(root, launcher_deleted, LV_EVENT_DELETE, NULL);
 
     /* Header row */
@@ -299,26 +300,30 @@ void deck_launcher_create(lv_obj_t *parent)
     lv_obj_t *row = deck_box(root);
     s_tile_count = 0;
     int n        = (int)(deck_app_count() < MAX_TILES ? deck_app_count() : MAX_TILES);
-#if HAL_PORTRAIT
-    lv_obj_set_width(row, LV_PCT(100));
-    lv_obj_set_flex_grow(row, 1);
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(row, TILE_GAP, 0);
-    lv_obj_set_style_pad_all(row, 6, 0); /* room for the selection glow */
-    lv_obj_add_flag(row, LV_OBJ_FLAG_SCROLLABLE); /* only if a module count ever overflows it */
-    lv_obj_set_scroll_dir(row, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_OFF);
-    for (int i = 0; i < n; i++) {
-        s_tiles[s_tile_count++] = build_row(row, deck_app_get((size_t)i), i, n);
+    if (HAL_PORTRAIT) {
+        lv_obj_set_width(row, LV_PCT(100));
+        lv_obj_set_flex_grow(row, 1);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(row, TILE_GAP, 0);
+        lv_obj_set_style_pad_all(row, 6, 0); /* room for the selection glow */
+        lv_obj_add_flag(row, LV_OBJ_FLAG_SCROLLABLE); /* only if a module count ever overflows it */
+        lv_obj_set_scroll_dir(row, LV_DIR_VER);
+        lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_OFF);
+        for (int i = 0; i < n; i++) {
+            s_tiles[s_tile_count++] = build_row(row, deck_app_get((size_t)i), i, n);
+        }
+    } else {
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_style_pad_column(row, TILE_GAP, 0);
+        if (DECK_SHORT) { /* the tiles take the height the header and ticker leave */
+            lv_obj_set_width(row, LV_PCT(100));
+            lv_obj_set_flex_grow(row, 1);
+        }
+        int32_t tile_w = n ? (ROW_W - (n - 1) * TILE_GAP) / n : ROW_W;
+        for (int i = 0; i < n; i++) {
+            s_tiles[s_tile_count++] = build_tile(row, deck_app_get((size_t)i), i, tile_w);
+        }
     }
-#else
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(row, TILE_GAP, 0);
-    int32_t tile_w = n ? (ROW_W - (n - 1) * TILE_GAP) / n : ROW_W;
-    for (int i = 0; i < n; i++) {
-        s_tiles[s_tile_count++] = build_tile(row, deck_app_get((size_t)i), i, tile_w);
-    }
-#endif
     if (s_sel >= s_tile_count) s_sel = 0;
     show_selection();
 
@@ -337,7 +342,7 @@ void deck_launcher_create(lv_obj_t *parent)
 
     s_stats = deck_label(bar, g_font.mono_m, g_pal.text, "");
     lv_label_set_long_mode(s_stats, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_set_width(s_stats, DECK_LP(1228, HAL_SCREEN_W - 52) - 28 - STATS_X);
+    lv_obj_set_width(s_stats, HAL_SCREEN_W - 52 - 28 - STATS_X);
     if (HAL_PORTRAIT) lv_obj_set_style_text_line_space(s_stats, 4, 0);
     lv_obj_align(s_stats, LV_ALIGN_LEFT_MID, STATS_X, 0);
     s_stats_start   = lv_tick_get();

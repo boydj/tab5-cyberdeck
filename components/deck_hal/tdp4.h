@@ -17,6 +17,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "lvgl.h"
+#include "deck_hal.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -87,6 +88,15 @@ void tdp4_kbd_backlight(uint8_t percent);
 /* Reset and probe the GT9895 on the main bus, then add an LVGL pointer
  * input for `disp`. Returns false if the controller does not answer. */
 bool tdp4_touch_init(i2c_master_bus_handle_t bus, lv_display_t *disp);
+
+/* ---- Orientation (tdp4_orient.c) ------------------------------------------ */
+
+/* Find the motion sensor on the audio bus and start reading it. False if
+ * there is none (AUTO rotation then stays portrait). */
+bool tdp4_orient_start(i2c_master_bus_handle_t bus);
+const char *tdp4_orient_sensor(void);       /* NULL if none */
+hal_rot_t tdp4_orient_sensed(void);         /* debounced, from the sensor alone */
+bool tdp4_orient_calibrate(int step);
 
 #ifdef __cplusplus
 }

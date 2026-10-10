@@ -49,6 +49,8 @@ static struct {
     char name[NOTES_NAME_MAX];
     mode_t_ mode;
     bool dirty;
+    lv_obj_t *bar;        /* toolbar */
+    lv_obj_t *body;       /* editor + preview */
     lv_obj_t *title;
     lv_obj_t *status;
     lv_obj_t *mode_btn[3];
@@ -82,17 +84,20 @@ static lv_obj_t *page(void)
     return s_n.screen;
 }
 
+/* Five tool buttons share a 528 px row in a portrait document. */
+static void tool_button_fit(lv_obj_t *b)
+{
+    lv_obj_set_style_min_width(b, DECK_LP(96, 72), 0);
+    lv_obj_set_style_pad_hor(b, DECK_LP(22, 16), 0);
+}
+
 /* A button that keyboard focus skips (keys have shortcuts instead). */
 static lv_obj_t *tool_button(lv_obj_t *parent, const char *text, lv_event_cb_t cb, void *ud)
 {
     lv_obj_t *b = deck_button(parent, text, g_font.disp_s);
     lv_obj_set_style_min_height(b, 46, 0);
     lv_obj_set_style_pad_ver(b, 8, 0);
-    if (HAL_PORTRAIT) {
-        /* Five of these share a 528 px row in a document. */
-        lv_obj_set_style_min_width(b, 72, 0);
-        lv_obj_set_style_pad_hor(b, 16, 0);
-    }
+    if (HAL_PORTRAIT) tool_button_fit(b);
     lv_group_remove_obj(b);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
     return b;
@@ -207,19 +212,19 @@ static void show_browser(const char *focus_name)
     snprintf(info, sizeof(info), "%s  ::  %d FILE%s  ::  %s", dir ? dir : "NO STORAGE", s_n.count,
              s_n.count == 1 ? "" : "S", hal_storage_is_sd() ? "SD" : "INTERNAL FLASH");
     lv_obj_t *path = deck_label(head, g_font.mono_s, g_pal.dim, info);
-#if HAL_PORTRAIT
-    /* Narrow: title and + NEW on one line, the storage info under them. */
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 12);
-    lv_label_set_long_mode(path, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_width(path, LV_PCT(100));
-    lv_obj_align(path, LV_ALIGN_TOP_LEFT, 0, 56);
-    lv_obj_t *nb = tool_button(head, "+ NEW", new_clicked, NULL);
-    lv_obj_align(nb, LV_ALIGN_TOP_RIGHT, 0, 0);
-#else
-    lv_obj_align(path, LV_ALIGN_LEFT_MID, 190, 0);
-    lv_obj_t *nb = tool_button(head, "+ NEW", new_clicked, NULL);
-    lv_obj_align(nb, LV_ALIGN_RIGHT_MID, 0, 0);
-#endif
+    if (HAL_PORTRAIT) {
+        /* Narrow: title and + NEW on one line, the storage info under them. */
+        lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 12);
+        lv_label_set_long_mode(path, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_width(path, LV_PCT(100));
+        lv_obj_align(path, LV_ALIGN_TOP_LEFT, 0, 56);
+        lv_obj_t *nb = tool_button(head, "+ NEW", new_clicked, NULL);
+        lv_obj_align(nb, LV_ALIGN_TOP_RIGHT, 0, 0);
+    } else {
+        lv_obj_align(path, LV_ALIGN_LEFT_MID, 190, 0);
+        lv_obj_t *nb = tool_button(head, "+ NEW", new_clicked, NULL);
+        lv_obj_align(nb, LV_ALIGN_RIGHT_MID, 0, 0);
+    }
 
     lv_obj_t *list = deck_box(root);
     lv_obj_set_width(list, LV_PCT(100));
@@ -411,6 +416,51 @@ static void close_clicked(lv_event_t *e)
     close_doc();
 }
 
+/* The parts of an open document that depend on the screen's shape. Each
+ * runs where open_doc() builds that part, and doc_layout() runs them all
+ * again when the screen turns. */
+
+/* Portrait: name on the first line (cut with dots), buttons on a second. */
+static void toolbar_fit(void)
+{
+    if (HAL_PORTRAIT) {
+        lv_obj_add_flag(s_n.mode_btn[0], LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+        lv_label_set_long_mode(s_n.title, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_max_width(s_n.title, HAL_SCREEN_W - 40 - 36 - 120, 0); /* leave the status room */
+    } else {
+        lv_obj_remove_flag(s_n.mode_btn[0], LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+        lv_label_set_long_mode(s_n.title, LV_LABEL_LONG_MODE_WRAP);
+        lv_obj_remove_local_style_prop(s_n.title, LV_STYLE_MAX_WIDTH, 0);
+    }
+}
+
+/* Editor and preview share the body, side by side or stacked: flex grow
+ * sets their size along the flow, and across it they fill. */
+static void pane_fit(lv_obj_t *pane)
+{
+    if (HAL_PORTRAIT) {
+        lv_obj_set_width(pane, LV_PCT(100));
+    } else {
+        lv_obj_set_height(pane, LV_PCT(100));
+    }
+}
+
+static void doc_layout(void)
+{
+    lv_obj_set_flex_flow(s_n.bar, DECK_LP(LV_FLEX_FLOW_ROW, LV_FLEX_FLOW_ROW_WRAP));
+    toolbar_fit();
+    uint32_t n = lv_obj_get_child_count(s_n.bar);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *b = lv_obj_get_child(s_n.bar, (int32_t)i);
+        if (lv_obj_has_flag(b, LV_OBJ_FLAG_CLICKABLE)) tool_button_fit(b);
+    }
+    lv_obj_set_flex_flow(s_n.body, DECK_FLOW_SPLIT);
+    pane_fit(s_n.ta);
+    pane_fit(s_n.preview);
+    lv_obj_set_style_pad_all(s_n.preview, DECK_LP(24, 20), 0);
+    if (s_n.osk) lv_obj_set_height(s_n.osk, DECK_OSK_H(40));
+}
+
 static void open_doc(const char *name, mode_t_ mode)
 {
     size_t len = 0;
@@ -426,9 +476,8 @@ static void open_doc(const char *name, mode_t_ mode)
     lv_obj_t *root = page();
 
     /* Toolbar */
-    lv_obj_t *bar = deck_box(root);
+    lv_obj_t *bar = s_n.bar = deck_box(root);
     lv_obj_set_width(bar, LV_PCT(100));
-    /* Portrait: name on the first line, the buttons wrap to a second. */
     lv_obj_set_flex_flow(bar, DECK_LP(LV_FLEX_FLOW_ROW, LV_FLEX_FLOW_ROW_WRAP));
     lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(bar, 12, 0);
@@ -442,18 +491,14 @@ static void open_doc(const char *name, mode_t_ mode)
     for (int i = 0; i < 3; i++) {
         s_n.mode_btn[i] = tool_button(bar, labels[i], mode_clicked, (void *)(intptr_t)i);
     }
-    if (HAL_PORTRAIT) {
-        lv_obj_add_flag(s_n.mode_btn[0], LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-        lv_label_set_long_mode(s_n.title, LV_LABEL_LONG_MODE_DOTS);
-        lv_obj_set_style_max_width(s_n.title, HAL_SCREEN_W - 40 - 36 - 120, 0); /* leave the status room */
-    }
+    if (HAL_PORTRAIT) toolbar_fit();
     tool_button(bar, "SAVE", save_clicked, NULL);
     tool_button(bar, "CLOSE", close_clicked, NULL);
     update_title();
 
     /* Body: editor and preview side by side (portrait: editor above the
      * preview); mode decides who is visible. */
-    lv_obj_t *body = deck_box(root);
+    lv_obj_t *body = s_n.body = deck_box(root);
     lv_obj_set_width(body, LV_PCT(100));
     lv_obj_set_flex_grow(body, 1);
     lv_obj_set_flex_flow(body, DECK_FLOW_SPLIT);
@@ -461,11 +506,7 @@ static void open_doc(const char *name, mode_t_ mode)
     lv_obj_set_style_pad_row(body, 16, 0);
 
     s_n.ta = lv_textarea_create(body);
-    if (HAL_PORTRAIT) {
-        lv_obj_set_width(s_n.ta, LV_PCT(100));
-    } else {
-        lv_obj_set_height(s_n.ta, LV_PCT(100));
-    }
+    pane_fit(s_n.ta);
     lv_obj_set_flex_grow(s_n.ta, 1);
     lv_obj_set_style_text_font(s_n.ta, g_font.mono_m, 0);
     lv_obj_set_style_text_color(s_n.ta, g_pal.text, 0);
@@ -482,11 +523,7 @@ static void open_doc(const char *name, mode_t_ mode)
     free(text);
 
     s_n.preview = deck_panel(body, DECK_CUT_TL | DECK_CUT_BR, 18);
-    if (HAL_PORTRAIT) {
-        lv_obj_set_width(s_n.preview, LV_PCT(100));
-    } else {
-        lv_obj_set_height(s_n.preview, LV_PCT(100));
-    }
+    pane_fit(s_n.preview);
     lv_obj_set_flex_grow(s_n.preview, 1);
     lv_obj_set_style_pad_all(s_n.preview, DECK_LP(24, 20), 0);
     lv_obj_add_flag(s_n.preview, LV_OBJ_FLAG_SCROLLABLE);
@@ -595,6 +632,29 @@ static void stop(deck_app_t *self)
     memset(&s_n, 0, sizeof(s_n));
 }
 
+/* The screen turned. An open document stays open as it is (text, cursor,
+ * unsaved changes, mode); only its panes re-flow and the preview re-renders
+ * for the new width. The browser is rebuilt with the same note selected.
+ * (Prompts never see this: the shell waits for them to close.) */
+static void notes_relayout(deck_app_t *self)
+{
+    (void)self;
+    if (!s_n.doc_open) {
+        const char *f = focused_note();
+        char name[NOTES_NAME_MAX];
+        snprintf(name, sizeof(name), "%s", f ? f : "");
+        show_browser(name[0] ? name : NULL);
+        return;
+    }
+    doc_layout();
+    lv_obj_update_layout(s_n.screen);
+    if (s_n.mode != MODE_VIEW) {
+        /* Keep the cursor in view in the re-wrapped text. */
+        lv_textarea_set_cursor_pos(s_n.ta, (int32_t)lv_textarea_get_cursor_pos(s_n.ta));
+    }
+    if (s_n.mode != MODE_EDIT) render_preview();
+}
+
 static deck_app_t s_app = {
     .name     = "NOTES",
     .tagline  = "MARKDOWN I/O",
@@ -604,6 +664,7 @@ static deck_app_t s_app = {
     .on_exit  = notes_exit,
     .on_stop  = stop,
     .on_key   = on_key,
+    .on_relayout = notes_relayout,
 };
 
 deck_app_t *app_notes(void) { return &s_app; }

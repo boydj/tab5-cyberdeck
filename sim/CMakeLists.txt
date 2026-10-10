@@ -49,6 +49,7 @@ file(GLOB APP_DIRS LIST_DIRECTORIES true "${ROOT}/apps/*")
 add_executable(deck_sim
     main.c
     hal_sim.c
+    ${ROOT}/components/deck_hal/hal_geometry.c
     net_sim.c
     ota_sim.c
     term_link_pty.c

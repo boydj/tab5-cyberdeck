@@ -18,11 +18,11 @@ static void return_clicked(lv_event_t *e)
 bool deck_stub_screen(deck_app_t *app, lv_obj_t *parent, const char *body)
 {
     lv_obj_t *p = deck_panel(parent, DECK_CUT_TL | DECK_CUT_BR, 28);
-    lv_obj_set_size(p, DECK_FIT_W(1040, 16), DECK_LP(540, 720));
+    lv_obj_set_size(p, DECK_FIT_W(1040, 16), DECK_LSP(540, 472, 720));
     lv_obj_center(p);
     deck_panel_set_tab(p, true);
     deck_panel_set_hazard(p, true);
-    lv_obj_set_style_pad_all(p, DECK_LP(36, 26), 0);
+    lv_obj_set_style_pad_all(p, DECK_LSP(36, 28, 26), 0);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(p, 18, 0);
 

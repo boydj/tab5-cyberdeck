@@ -12,7 +12,7 @@ if(deck_board STREQUAL "tdisplay_p4")
         message(FATAL_ERROR "DECK_BOARD=tdisplay_p4 but sdkconfig selects the Tab5; delete the sdkconfig or use a separate build dir")
     endif()
     idf_component_register(
-        SRCS "hal_common.c" "hal_tdisplay_p4.c" "tdp4_keyboard.c" "tdp4_touch.c"
+        SRCS "hal_common.c" "hal_geometry.c" "hal_tdisplay_p4.c" "tdp4_keyboard.c" "tdp4_touch.c" "tdp4_orient.c"
         INCLUDE_DIRS "include"
         REQUIRES lvgl__lvgl
         PRIV_REQUIRES
@@ -24,6 +24,8 @@ if(deck_board STREQUAL "tdisplay_p4")
             esp_driver_ledc
             esp_driver_sdmmc
             esp_hw_support
+            esp_driver_ppa
+            esp_mm
             sdmmc
             fatfs
             wear_levelling
@@ -37,7 +39,7 @@ else()
         message(FATAL_ERROR "sdkconfig selects the T-Display P4 but DECK_BOARD is tab5; pass -DDECK_BOARD=tdisplay_p4")
     endif()
     idf_component_register(
-        SRCS "hal_tab5.cpp" "hal_common.c"
+        SRCS "hal_tab5.cpp" "hal_common.c" "hal_geometry.c"
         INCLUDE_DIRS "include"
         REQUIRES lvgl__lvgl
         PRIV_REQUIRES
