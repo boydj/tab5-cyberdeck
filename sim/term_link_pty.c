@@ -12,7 +12,11 @@
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#ifdef __APPLE__
 #include <util.h>
+#else
+#include <pty.h>
+#endif
 
 static int s_fd = -1;
 static pid_t s_pid;

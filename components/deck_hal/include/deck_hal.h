@@ -16,6 +16,18 @@
 #include <stddef.h>
 #include <time.h>
 
+#if defined(__has_include)
+#if __has_include("sdkconfig.h")
+#include "sdkconfig.h"
+#endif
+#endif
+
+/* Board selection. On the device it comes from Kconfig (DECK_BOARD choice);
+ * the simulator passes -DDECK_BOARD_TDISPLAY_P4 to render the same layout. */
+#if defined(CONFIG_DECK_BOARD_TDISPLAY_P4) && !defined(DECK_BOARD_TDISPLAY_P4)
+#define DECK_BOARD_TDISPLAY_P4 1
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -32,8 +44,18 @@ void hal_lvgl_unlock(void);
 
 /* ---- Display ------------------------------------------------------------- */
 
+#ifdef DECK_BOARD_TDISPLAY_P4
+/* LilyGo T-Display P4, 4.1" AMOLED, native portrait. The K270 keyboard docks
+ * below the screen, so the UI runs portrait: no rotation, no PPA pass. */
+#define HAL_SCREEN_W 568
+#define HAL_SCREEN_H 1232
+#else
 #define HAL_SCREEN_W 1280
 #define HAL_SCREEN_H 720
+#endif
+
+/* True when the screen is taller than wide (layouts stack instead of row). */
+#define HAL_PORTRAIT (HAL_SCREEN_H > HAL_SCREEN_W)
 
 void hal_backlight_set(uint8_t percent);   /* 3..100 (never fully dark) */
 
