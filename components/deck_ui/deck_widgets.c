@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "deck_layout.h"
 #include "deck_theme.h"
 
 #define GLOW_GAP 4      /* focus glow sits this far outside the outline */
@@ -290,6 +291,9 @@ lv_obj_t *deck_button(lv_obj_t *parent, const char *text, const lv_font_t *font)
     lv_obj_center(l);
 
     lv_obj_add_event_cb(b, button_label_color, LV_EVENT_STATE_CHANGED, NULL);
+    /* Portrait screens stack panes into scrolling columns: keep the
+     * keyboard-focused button in view. */
+    if (HAL_PORTRAIT) lv_obj_add_flag(b, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_group_t *g = lv_group_get_default();
     if (g) lv_group_add_obj(g, b);
     return b;
@@ -347,6 +351,16 @@ lv_obj_t *deck_box(lv_obj_t *parent)
     return o;
 }
 
+/* A label's self-size only honours a pixel max width (a percentage would
+ * wrap the text but keep one line of height), so resolve it here. */
+static void section_resized(lv_event_t *e)
+{
+    lv_obj_t *row   = lv_event_get_target_obj(e);
+    lv_obj_t *label = (lv_obj_t *)lv_event_get_user_data(e);
+    int32_t w       = lv_obj_get_content_width(row) - 12 - 8; /* column gap + a stub of rule */
+    if (w > 0 && lv_obj_get_style_max_width(label, 0) != w) lv_obj_set_style_max_width(label, w, 0);
+}
+
 lv_obj_t *deck_section(lv_obj_t *parent, const char *title)
 {
     lv_obj_t *row = deck_box(parent);
@@ -357,6 +371,9 @@ lv_obj_t *deck_section(lv_obj_t *parent, const char *title)
 
     lv_obj_t *l = deck_label(row, g_font.disp_s, g_pal.accent, "");
     lv_label_set_text_fmt(l, "// %s", title);
+    /* A narrow screen can be shorter than a long title (user@host...):
+     * cap it at the row's width so it wraps instead of running off. */
+    if (HAL_PORTRAIT) lv_obj_add_event_cb(row, section_resized, LV_EVENT_SIZE_CHANGED, l);
 
     lv_obj_t *rule = lv_obj_create(row);
     lv_obj_remove_style_all(rule);

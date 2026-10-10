@@ -16,6 +16,7 @@
 
 #include "deck_hal.h"
 #include "deck_icons.h"
+#include "deck_layout.h"
 #include "deck_modal.h"
 #include "deck_shell.h"
 #include "deck_term.h"
@@ -202,10 +203,21 @@ static void pump(lv_timer_t *tm)
     }
 }
 
+#if HAL_PORTRAIT
+/* Two rows on a narrow screen; Fn stays put so it toggles back in place.
+ * CTRL must stay button 2 (set_bar_page makes it checkable). */
+static const char *s_bar_main[] = {"ESC", "TAB", "CTRL", "PGUP", "PGDN", "HOME", "END", "\n",
+                                   "Fn",  "<",   "UP",   "DN",   ">",    "QUIT", ""};
+static const char *s_bar_fn[] = {"F1", "F2", "F3", "F4", "F5", "F6", "F7", "\n",
+                                 "Fn", "F8", "F9", "F10", "F11", "F12", ""};
+#define BAR_H 104
+#else
 static const char *s_bar_main[] = {"ESC", "TAB", "CTRL", "<", "UP", "DN", ">", "PGUP", "PGDN", "HOME", "END", "Fn",
                                    "QUIT", ""};
 static const char *s_bar_fn[] = {"F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Fn",
                                  ""};
+#define BAR_H 54
+#endif
 
 static void set_bar_page(bool fn)
 {
@@ -267,6 +279,11 @@ static void open_term(const host_t *h, const char *password)
     lv_obj_set_style_pad_ver(s_t.info, 4, 0);
     lv_obj_set_style_bg_color(s_t.info, g_pal.panel, 0);
     lv_obj_set_style_bg_opa(s_t.info, LV_OPA_COVER, 0);
+    if (HAL_PORTRAIT) {
+        /* One line, cut with dots: a wrap would shrink the grid mid-session. */
+        lv_label_set_long_mode(s_t.info, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_height(s_t.info, lv_font_get_line_height(g_font.mono_s) + 8);
+    }
 
     lv_obj_t *area = deck_box(root);
     lv_obj_set_width(area, LV_PCT(100));
@@ -281,7 +298,7 @@ static void open_term(const host_t *h, const char *password)
     s_t.term            = deck_term_create(area, &cfg);
 
     s_t.bar = lv_buttonmatrix_create(root);
-    lv_obj_set_size(s_t.bar, LV_PCT(100), 54);
+    lv_obj_set_size(s_t.bar, LV_PCT(100), BAR_H);
     lv_obj_set_style_bg_color(s_t.bar, g_pal.panel, 0);
     lv_obj_set_style_bg_opa(s_t.bar, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_t.bar, 0, 0);
@@ -417,14 +434,14 @@ static void show_hosts(void)
     lv_obj_t *focus = NULL;
     for (int i = 0; i < s_nhosts; i++) {
         lv_obj_t *row = deck_panel(list, DECK_CUT_BR, 12);
-        lv_obj_set_size(row, LV_PCT(100), 68);
+        lv_obj_set_size(row, LV_PCT(100), DECK_LP(68, 80));
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_CLICK_FOCUSABLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS);
         lv_obj_set_style_pad_hor(row, 18, 0);
         lv_obj_set_user_data(row, (void *)(intptr_t)(i + 1));
         lv_obj_add_event_cb(row, row_clicked, LV_EVENT_CLICKED, (void *)(intptr_t)i);
         lv_group_add_obj(deck_input_group(), row);
         lv_obj_t *n = deck_icon_text(row, ICON_CONSOLE, s_hosts[i].name, g_font.mono_l, g_pal.text);
-        lv_obj_align(n, LV_ALIGN_LEFT_MID, 0, 0);
+        lv_obj_align(n, LV_ALIGN_LEFT_MID, 0, DECK_LP(0, -12));
         char where[112];
         if (s_hosts[i].local) {
             snprintf(where, sizeof(where), "simulator: runs your shell");
@@ -432,10 +449,13 @@ static void show_hosts(void)
             snprintf(where, sizeof(where), "%s@%s:%u", s_hosts[i].user, s_hosts[i].host, s_hosts[i].port);
         }
         lv_obj_t *w = deck_label(row, g_font.mono_s, g_pal.dim, where);
-        lv_obj_align(w, LV_ALIGN_RIGHT_MID, 0, 0);
+        /* Portrait: the address goes under the name, lined up with its text. */
+        lv_obj_align(w, DECK_LP(LV_ALIGN_RIGHT_MID, LV_ALIGN_LEFT_MID), DECK_LP(0, 32), DECK_LP(0, 18));
         if (i == s_t.sel || focus == NULL) focus = row;
     }
-    deck_label(root, g_font.mono_s, g_pal.dim, "[ENTER] CONNECT    [CTRL+N] NEW    [DEL] REMOVE    [ESC] DECK");
+    deck_label(root, g_font.mono_s, g_pal.dim,
+               DECK_LP("[ENTER] CONNECT    [CTRL+N] NEW    [DEL] REMOVE    [ESC] DECK",
+                       "[ENTER] CONNECT  [CTRL+N] NEW  [DEL] REMOVE  [ESC] DECK"));
     if (focus) {
         lv_group_focus_obj(focus);
         lv_obj_add_state(focus, LV_STATE_FOCUS_KEY);

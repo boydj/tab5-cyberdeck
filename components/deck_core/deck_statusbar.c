@@ -15,10 +15,16 @@
 #include "deck_audio.h"
 #include "deck_portal.h"
 #include "deck_icons.h"
+#include "deck_layout.h"
 #include "deck_shell.h"
 #include "deck_theme.h"
 #include "deck_update.h"
 #include "deck_widgets.h"
+
+/* Portrait rows (DECK_STATUSBAR_H is 92 there). */
+#define BAR_ROW1_H 50
+#define BAR_ROW2_Y 50
+#define BAR_ROW2_H 38
 
 static lv_obj_t *s_bar;
 static lv_obj_t *s_left;
@@ -65,6 +71,7 @@ static void build_left(deck_app_t *app)
         deck_label(brand, g_font.disp_m, g_pal.accent, "//OS");
         lv_obj_t *ver = deck_label(s_left, g_font.mono_s, g_pal.dim, "v" DECK_VERSION);
         lv_obj_set_style_pad_left(ver, 10, 0);
+        if (HAL_PORTRAIT) lv_obj_set_style_pad_top(ver, 6, 0); /* sit on the brand's baseline */
         return;
     }
     lv_obj_t *back = deck_button(s_left, "DECK", g_font.disp_s);
@@ -85,7 +92,7 @@ static void build_left(deck_app_t *app)
     lv_obj_t *title = deck_label(s_left, g_font.disp_m, g_pal.text, "");
     lv_label_set_text_fmt(title, "%02d", deck_app_index(app) + 1);
     lv_obj_set_style_text_color(title, g_pal.accent, 0);
-    lv_obj_set_style_pad_left(title, 14, 0);
+    lv_obj_set_style_pad_left(title, DECK_LP(14, 10), 0);
     deck_label(s_left, g_font.disp_m, g_pal.dim, "//");
     deck_label(s_left, g_font.disp_m, g_pal.text, app->name);
 }
@@ -94,6 +101,26 @@ static void set_indicator(lv_obj_t *row, const char *icon, const char *text, lv_
 {
     deck_icon_text_set(row, icon, text, color);
 }
+
+#if HAL_PORTRAIT
+/* Icon-only indicators (all but the battery) when the row is crowded. */
+static void set_compact(bool on)
+{
+    static int8_t s_on = -1; /* runs every second: only touch styles on a change */
+    if (s_on == (int8_t)on && lv_obj_get_style_pad_column(s_right, 0) == (on ? 14 : 18)) return;
+    s_on = (int8_t)on;
+    lv_obj_t *rows[] = {s_upd, s_music, s_link, s_kbd, s_sd, s_net};
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        lv_obj_t *text = lv_obj_get_child(rows[i], 1);
+        if (on) {
+            lv_obj_add_flag(text, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_remove_flag(text, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    lv_obj_set_style_pad_column(s_right, on ? 14 : 18, 0);
+}
+#endif
 
 static void refresh(lv_timer_t *t)
 {
@@ -162,6 +189,24 @@ static void refresh(lv_timer_t *t)
                       p.percent <= 15 && !p.charging ? g_pal.danger : g_pal.accent);
     }
 
+#if HAL_PORTRAIT
+    /* Portrait: the date shares the second row with the indicators. When
+     * they crowd it, shorten the date, drop it, then show icons only (the
+     * battery keeps its percentage). */
+    const char *forms[] = {date_full, date_short, NULL, NULL};
+    for (int i = 0; i < 4; i++) {
+        if (forms[i]) {
+            lv_obj_remove_flag(s_date, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(s_date, forms[i]);
+        } else {
+            lv_obj_add_flag(s_date, LV_OBJ_FLAG_HIDDEN);
+        }
+        set_compact(i == 3);
+        lv_obj_update_layout(s_bar);
+        int32_t left_edge = forms[i] ? lv_obj_get_x2(s_date) + 20 : 16;
+        if (left_edge < lv_obj_get_x(s_right)) break;
+    }
+#else
     /* With UPD and LINK up the indicators reach the centre: shorten the
      * date, then drop it, rather than overlap. */
     const char *forms[] = {date_full, date_short, NULL};
@@ -175,6 +220,7 @@ static void refresh(lv_timer_t *t)
         lv_obj_update_layout(s_bar);
         if (lv_obj_get_x2(s_mid) + 24 < lv_obj_get_x(s_right)) break;
     }
+#endif
 }
 
 static lv_obj_t *indicator(lv_obj_t *parent)
@@ -214,30 +260,44 @@ void deck_statusbar_create(lv_obj_t *parent)
     lv_obj_add_flag(seg2, LV_OBJ_FLAG_IGNORE_LAYOUT);
     lv_obj_align(seg2, LV_ALIGN_BOTTOM_LEFT, 230, 0);
 
+    /* Landscape: one row, brand | clock + date | indicators.
+     * Portrait: brand or back button and the clock on the first row; the
+     * date and the indicators on the second. */
     s_left = deck_box(s_bar);
-    lv_obj_set_height(s_left, LV_PCT(100));
+    lv_obj_set_height(s_left, DECK_LP(LV_PCT(100), BAR_ROW1_H));
     lv_obj_set_flex_flow(s_left, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_left, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(s_left, 8, 0);
-    lv_obj_align(s_left, LV_ALIGN_LEFT_MID, 16, 0);
+    lv_obj_align(s_left, DECK_LP(LV_ALIGN_LEFT_MID, LV_ALIGN_TOP_LEFT), 16, DECK_LP(0, 2));
 
     lv_obj_t *mid = s_mid = deck_box(s_bar);
     lv_obj_set_flex_flow(mid, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(mid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(mid, 14, 0);
-    lv_obj_align(mid, LV_ALIGN_CENTER, 0, 0);
+    if (HAL_PORTRAIT) {
+        lv_obj_set_height(mid, BAR_ROW1_H);
+        lv_obj_align(mid, LV_ALIGN_TOP_RIGHT, -16, 2);
+    } else {
+        lv_obj_align(mid, LV_ALIGN_CENTER, 0, 0);
+    }
     s_clock = deck_label(mid, g_font.disp_m, g_pal.text, "--:--:--");
     /* Tap the clock to sleep the screen. */
     lv_obj_add_flag(mid, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(mid, 12);
     lv_obj_add_event_cb(mid, clock_clicked, LV_EVENT_CLICKED, NULL);
-    s_date  = deck_label(mid, g_font.mono_s, g_pal.dim, "");
+    s_date  = deck_label(DECK_LP(mid, s_bar), g_font.mono_s, g_pal.dim, "");
+    if (HAL_PORTRAIT) lv_obj_align(s_date, LV_ALIGN_TOP_LEFT, 16, BAR_ROW2_Y + 9);
 
     lv_obj_t *right = s_right = deck_box(s_bar);
     lv_obj_set_flex_flow(right, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(right, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(right, 22, 0);
-    lv_obj_align(right, LV_ALIGN_RIGHT_MID, -16, 0);
+    lv_obj_set_style_pad_column(right, DECK_LP(22, 18), 0);
+    if (HAL_PORTRAIT) {
+        lv_obj_set_height(right, BAR_ROW2_H);
+        lv_obj_align(right, LV_ALIGN_TOP_RIGHT, -16, BAR_ROW2_Y);
+    } else {
+        lv_obj_align(right, LV_ALIGN_RIGHT_MID, -16, 0);
+    }
     s_upd = indicator(right); /* shown only while an update is waiting */
     lv_obj_add_flag(s_upd, LV_OBJ_FLAG_HIDDEN);
     s_music = indicator(right); /* while a track is loaded; tap opens PLAYER */

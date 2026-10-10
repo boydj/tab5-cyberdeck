@@ -16,6 +16,7 @@
 #include "calc_engine.h"
 #include "deck_hal.h"
 #include "deck_icons.h"
+#include "deck_layout.h"
 #include "deck_shell.h"
 #include "deck_theme.h"
 #include "deck_widgets.h"
@@ -313,13 +314,18 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
 
     lv_obj_t *root = deck_box(parent);
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_all(root, 20, 0);
+    lv_obj_set_flex_flow(root, DECK_FLOW_SPLIT);
+    lv_obj_set_style_pad_all(root, DECK_LP(20, 16), 0);
     lv_obj_set_style_pad_column(root, 20, 0);
+    lv_obj_set_style_pad_row(root, 16, 0);
 
-    /* Left: tape + input */
+    /* Left: tape + input (portrait: top) */
     lv_obj_t *left = deck_box(root);
-    lv_obj_set_height(left, LV_PCT(100));
+    if (HAL_PORTRAIT) {
+        lv_obj_set_width(left, LV_PCT(100));
+    } else {
+        lv_obj_set_height(left, LV_PCT(100));
+    }
     lv_obj_set_flex_grow(left, 1);
     lv_obj_set_flex_flow(left, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(left, 14, 0);
@@ -347,8 +353,9 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_set_scroll_dir(s_ui.tape_list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_ui.tape_list, LV_SCROLLBAR_MODE_AUTO);
     if (s_c.count == 0) {
-        deck_label(s_ui.tape_list, g_font.mono_s, g_pal.dim,
-                   "Type an expression and press Enter.  Up/Down recall.  Ctrl+D deg/rad.");
+        lv_obj_t *hint = deck_label(s_ui.tape_list, g_font.mono_s, g_pal.dim,
+                                    "Type an expression and press Enter.  Up/Down recall.  Ctrl+D deg/rad.");
+        if (HAL_PORTRAIT) lv_obj_set_width(hint, LV_PCT(100)); /* wrap */
     }
     for (int i = 0; i < s_c.count; i++) add_tape_row(&s_c.tape[i], false);
     lv_obj_update_layout(s_ui.tape_list);
@@ -377,10 +384,11 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_set_width(s_ui.preview, LV_PCT(100));
     lv_obj_set_style_text_align(s_ui.preview, LV_TEXT_ALIGN_RIGHT, 0);
     s_ui.bases = deck_label(in, g_font.mono_s, g_pal.dim, "");
+    if (HAL_PORTRAIT) lv_obj_set_width(s_ui.bases, LV_PCT(100)); /* long BIN wraps */
 
     /* Right: keypad */
     s_ui.keypad_col = deck_box(root);
-    lv_obj_set_size(s_ui.keypad_col, 520, LV_PCT(100));
+    lv_obj_set_size(s_ui.keypad_col, DECK_LP(520, LV_PCT(100)), DECK_LP(LV_PCT(100), 500));
     lv_obj_set_flex_flow(s_ui.keypad_col, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(s_ui.keypad_col, 14, 0);
     lv_obj_t *tabs = deck_box(s_ui.keypad_col);

@@ -174,7 +174,11 @@ void deck_shell_shortcuts(void)
         "  ESC         back / close\n"
         "\n"
         "HOME\n"
+#if HAL_PORTRAIT
+        "  ARROWS ENTER, or 1..7   pick a module\n"
+#else
         "  LEFT RIGHT ENTER, or 1..7   pick a module\n"
+#endif
         "\n"
         "TERMINAL\n"
         "  every key goes to the server, ESC too\n"

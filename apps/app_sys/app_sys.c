@@ -1,5 +1,6 @@
 /*
- * SYSTEM module, three columns:
+ * SYSTEM module, three columns (stacked in one scrolling column on a
+ * portrait screen):
  *   DISPLAY   brightness, scanlines, boot POST, accent
  *   NETWORK   Wi-Fi status and setup, timezone, clock (manual or NTP)
  *   SYSTEM    live hardware readout and firmware updates
@@ -13,6 +14,7 @@
 #include "deck_fx.h"
 #include "deck_hal.h"
 #include "deck_icons.h"
+#include "deck_layout.h"
 #include "deck_modal.h"
 #include "deck_update.h"
 #include "deck_net.h"
@@ -55,9 +57,10 @@ static const char *s_info_keys[INFO_COUNT] = {
 static lv_obj_t *column_panel(lv_obj_t *parent, int32_t w)
 {
     lv_obj_t *p = deck_panel(parent, DECK_CUT_TL | DECK_CUT_BR, 22);
-    lv_obj_set_size(p, w, LV_PCT(100));
+    /* Portrait: full width, as tall as its rows; the page scrolls. */
+    lv_obj_set_size(p, DECK_LP(w, LV_PCT(100)), DECK_LP(LV_PCT(100), LV_SIZE_CONTENT));
     deck_panel_set_tab(p, true);
-    lv_obj_set_style_pad_all(p, 26, 0);
+    lv_obj_set_style_pad_all(p, DECK_LP(26, 22), 0);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(p, 14, 0);
     return p;
@@ -196,7 +199,7 @@ static lv_obj_t *make_roller(lv_obj_t *parent, int first, int count, int width_d
     lv_obj_t *r = lv_roller_create(col);
     lv_roller_set_options(r, opts, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(r, 3);
-    lv_obj_set_width(r, width_digits >= 4 ? 130 : 96);
+    lv_obj_set_width(r, width_digits >= 4 ? DECK_LP(130, 104) : DECK_LP(96, 76));
     lv_obj_set_style_text_font(r, g_font.mono_l, 0);
     lv_obj_set_style_bg_color(r, g_pal.panel, 0);
     lv_obj_set_style_border_color(r, g_pal.line, 0);
@@ -226,9 +229,9 @@ static void open_clock_modal(lv_event_t *e)
     lv_obj_t *p = deck_panel(s_ui.modal, DECK_CUT_TL | DECK_CUT_BR, 22);
     deck_panel_set_tab(p, true);
     deck_panel_set_outline(p, g_pal.accent);
-    lv_obj_set_size(p, 760, LV_SIZE_CONTENT);
+    lv_obj_set_size(p, DECK_FIT_W(760, 16), LV_SIZE_CONTENT);
     lv_obj_center(p);
-    lv_obj_set_style_pad_all(p, 30, 0);
+    lv_obj_set_style_pad_all(p, DECK_LP(30, 20), 0);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(p, 20, 0);
 
@@ -312,8 +315,9 @@ static void scan_poll(lv_timer_t *t)
     const char *items[SCAN_SHOW + 1];
     for (int i = 0; i < s_ap_count; i++) {
         int bars = s_aps[i].rssi > -55 ? 4 : s_aps[i].rssi > -65 ? 3 : s_aps[i].rssi > -75 ? 2 : 1;
-        snprintf(rows[i], sizeof(rows[i]), "%-32.32s %s %.*s", s_aps[i].ssid, s_aps[i].secure ? "LOCK" : "OPEN",
-                 bars, "||||");
+        /* Portrait rows are ~40 characters wide; very long names get cut. */
+        snprintf(rows[i], sizeof(rows[i]), DECK_LP("%-32.32s %s %.*s", "%-26.26s %s %.*s"), s_aps[i].ssid,
+                 s_aps[i].secure ? "LOCK" : "OPEN", bars, "||||");
         items[i] = rows[i];
     }
     snprintf(rows[s_ap_count], sizeof(rows[0]), "Other network...");
@@ -565,9 +569,16 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
 
     lv_obj_t *root = deck_box(parent);
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_all(root, 24, 0);
+    lv_obj_set_flex_flow(root, DECK_FLOW_SPLIT);
+    lv_obj_set_style_pad_all(root, DECK_LP(24, 16), 0);
     lv_obj_set_style_pad_column(root, 20, 0);
+    if (HAL_PORTRAIT) {
+        /* Three panels do not fit one portrait screen: scroll them, and
+         * let keyboard focus pull the focused control into view. */
+        lv_obj_set_style_pad_row(root, 16, 0);
+        lv_obj_add_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scroll_dir(root, LV_DIR_VER);
+    }
 
     /* ---- DISPLAY ---- */
     lv_obj_t *left = column_panel(root, 372);
@@ -616,8 +627,10 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_set_style_pad_row(sw, 12, 0);
     for (int i = 0; i < DECK_ACCENT_COUNT; i++) {
         lv_obj_t *b = deck_panel(sw, DECK_CUT_BR, 12);
-        lv_obj_set_size(b, 150, 58);
+        /* Portrait: the full-width panel takes all four swatches in a row. */
+        lv_obj_set_size(b, DECK_LP(150, 106), 58);
         lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
+        if (HAL_PORTRAIT) lv_obj_add_flag(b, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
         deck_panel_set_outline(b, deck_theme_accent_color(i));
         if (i == deck_theme_accent()) {
             lv_obj_add_state(b, LV_STATE_CHECKED);
@@ -625,7 +638,7 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
         }
         lv_obj_t *bar = lv_obj_create(b);
         lv_obj_remove_style_all(bar);
-        lv_obj_set_size(bar, 110, 5);
+        lv_obj_set_size(bar, DECK_LP(110, 78), 5);
         lv_obj_set_style_bg_color(bar, deck_theme_accent_color(i), 0);
         lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
         lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 12);
@@ -669,7 +682,7 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
 
     /* ---- SYSTEM ---- */
     lv_obj_t *right = column_panel(root, 0);
-    lv_obj_set_flex_grow(right, 1);
+    if (!HAL_PORTRAIT) lv_obj_set_flex_grow(right, 1);
     lv_obj_set_style_pad_row(right, 8, 0);
     deck_section(right, "SYSTEM");
     for (int i = 0; i < INFO_COUNT; i++) s_ui.info[i] = kv_row(right, s_info_keys[i]);

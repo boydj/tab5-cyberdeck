@@ -25,9 +25,28 @@ static char s_status[96];
 
 bool link_has_local(void) { return true; }
 
+static int s_cols, s_rows;
+
+/* SIM_HOSTKEY=new|changed: ask about the host key before "connecting", so
+ * the fingerprint dialogs can be exercised. */
+static bool spawn(int cols, int rows);
+
 bool link_open(const link_params_t *p, int cols, int rows)
 {
     (void)p;
+    const char *hk = getenv("SIM_HOSTKEY");
+    if (hk && hk[0]) {
+        s_cols  = cols;
+        s_rows  = rows;
+        s_state = LINK_VERIFY_HOST;
+        snprintf(s_status, sizeof(s_status), "verify host key");
+        return true;
+    }
+    return spawn(cols, rows);
+}
+
+static bool spawn(int cols, int rows)
+{
     struct winsize ws = {.ws_row = (unsigned short)rows, .ws_col = (unsigned short)cols};
     s_pid             = forkpty(&s_fd, NULL, NULL, &ws);
     if (s_pid < 0) {
@@ -86,7 +105,20 @@ size_t link_read(char *buf, size_t max)
 
 link_state_t link_state(void) { return s_state; }
 const char *link_status(void) { return s_status; }
-const char *link_fingerprint(void) { return ""; }
-bool link_hostkey_changed(void) { return false; }
-void link_hostkey_decide(bool accept) { (void)accept; }
+const char *link_fingerprint(void) { return "SHA256:Xq3v9bK2mJ7tR1pLw8sZ4nYc6hDf0aGe5uIo2kVxNQE"; }
+bool link_hostkey_changed(void)
+{
+    const char *hk = getenv("SIM_HOSTKEY");
+    return hk && strcmp(hk, "changed") == 0;
+}
+void link_hostkey_decide(bool accept)
+{
+    if (s_state != LINK_VERIFY_HOST) return;
+    if (accept) {
+        spawn(s_cols, s_rows);
+    } else {
+        s_state = LINK_CLOSED;
+        snprintf(s_status, sizeof(s_status), "host key rejected");
+    }
+}
 const char *link_pubkey(void) { return "ecdsa-sha2-nistp256 AAAA... (simulator)"; }

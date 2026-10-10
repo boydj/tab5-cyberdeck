@@ -5,11 +5,13 @@
 
 #include "deck_assets.h"
 #include "deck_hal.h"
+#include "deck_layout.h"
 #include "deck_theme.h"
 #include "term_glyphs.h"
 #include "vterm.h"
 
-#define FONT_PX 16
+/* Portrait (568 px wide, ~331 ppi): 14 px gives 8 px cells, 69 columns. */
+#define FONT_PX DECK_LP(16, 14)
 #define SB_DEFAULT 2000
 #define BLINK_MS 530
 #define PAD 6

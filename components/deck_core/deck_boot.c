@@ -11,6 +11,7 @@
 
 #include "deck_fx.h"
 #include "deck_hal.h"
+#include "deck_layout.h"
 #include "deck_net.h"
 #include "deck_ota.h"
 #include "deck_shell.h"
@@ -20,6 +21,7 @@
 #define LINE_MS 120
 #define HOLD_MS 650
 #define MAX_LINES 12
+#define BOOT_X DECK_LP(80, 24) /* left edge of the POST column */
 
 typedef enum { ST_OK, ST_WARN, ST_DEFER, ST_NONE } status_t;
 
@@ -58,11 +60,17 @@ static void collect(void)
     add(ST_OK, NULL, "CPU  %s @ %luMHz", si.chip, (unsigned long)si.cpu_mhz);
     add(ST_OK, NULL, "RAM  %luK PSRAM / %luK SRAM", (unsigned long)(si.psram_total / 1024),
         (unsigned long)(si.heap_int_total / 1024));
+#ifdef DECK_BOARD_TDISPLAY_P4
+    add(ST_OK, NULL, "VID  %s %dx%d", si.board, HAL_SCREEN_W, HAL_SCREEN_H);
+#define KBD_NAME "KEYBOARD"
+#else
     add(ST_OK, NULL, "VID  %s 1280x720 PPA-ROT", si.board);
+#define KBD_NAME "TAB5 KEYBOARD"
+#endif
     if (hal_kbd_present()) {
-        add(ST_OK, NULL, "I/O  TAB5 KEYBOARD FW 0x%02X", hal_kbd_fw_version());
+        add(ST_OK, NULL, "I/O  " KBD_NAME " FW 0x%02X", hal_kbd_fw_version());
     } else {
-        add(ST_WARN, "NOT DETECTED", "I/O  TAB5 KEYBOARD");
+        add(ST_WARN, "NOT DETECTED", "I/O  " KBD_NAME);
     }
     add(hal_rtc_present() ? ST_OK : ST_WARN, hal_rtc_present() ? NULL : "MISSING", "RTC  RX8130");
     if (hal_sd_mounted()) {
@@ -99,7 +107,7 @@ static void collect(void)
 static void show_line(const post_line_t *l)
 {
     lv_obj_t *row = deck_box(s_list);
-    lv_obj_set_width(row, 760);
+    lv_obj_set_width(row, DECK_LP(760, HAL_SCREEN_W - 2 * BOOT_X));
 
     lv_obj_t *t = deck_label(row, g_font.mono_m, g_pal.text, l->text);
     lv_obj_align(t, LV_ALIGN_LEFT_MID, 0, 0);
@@ -185,7 +193,7 @@ void deck_boot_run(void)
     lv_obj_t *col = deck_box(s_overlay);
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(col, 6, 0);
-    lv_obj_align(col, LV_ALIGN_TOP_LEFT, 80, 60);
+    lv_obj_align(col, LV_ALIGN_TOP_LEFT, BOOT_X, 60);
 
     lv_obj_t *brand = deck_box(col);
     lv_obj_set_flex_flow(brand, LV_FLEX_FLOW_ROW);
@@ -196,7 +204,11 @@ void deck_boot_run(void)
     lv_obj_t *ver = deck_label(brand, g_font.mono_m, g_pal.dim, "  BIOS v" DECK_VERSION);
     lv_obj_set_style_pad_bottom(ver, 10, 0);
 
+#ifdef DECK_BOARD_TDISPLAY_P4
+    lv_obj_t *sub = deck_label(col, g_font.mono_m, g_pal.accent2, "POWER-ON SELF TEST // T-DISPLAY P4");
+#else
     lv_obj_t *sub = deck_label(col, g_font.mono_m, g_pal.accent2, "POWER-ON SELF TEST // M5STACK TAB5");
+#endif
     lv_obj_set_style_pad_bottom(sub, 18, 0);
 
     s_list = deck_box(col);

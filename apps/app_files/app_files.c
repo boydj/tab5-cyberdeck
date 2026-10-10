@@ -23,6 +23,7 @@
 #include "deck_hal.h"
 #include "deck_icons.h"
 #include "deck_input.h"
+#include "deck_layout.h"
 #include "deck_md.h"
 #include "deck_modal.h"
 #include "deck_net.h"
@@ -591,7 +592,8 @@ static void build_portal(lv_obj_t *parent)
     lv_obj_set_flex_grow(txt, 1);
     lv_obj_set_flex_flow(txt, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(txt, 4, 0);
-    deck_label(txt, g_font.mono_s, g_pal.dim, "OPEN IN A BROWSER ON THE SAME NETWORK");
+    lv_obj_t *hint = deck_label(txt, g_font.mono_s, g_pal.dim, "OPEN IN A BROWSER ON THE SAME NETWORK");
+    if (HAL_PORTRAIT) lv_obj_set_width(hint, LV_PCT(100)); /* wrap beside the QR code */
     s_ui.url_host = deck_label(txt, g_font.disp_m, g_pal.accent, "");
     s_ui.url_ip   = deck_label(txt, g_font.mono_l, g_pal.text, "");
     lv_obj_t *pl  = deck_label(txt, g_font.mono_s, g_pal.dim, "PIN");
@@ -599,7 +601,7 @@ static void build_portal(lv_obj_t *parent)
     s_ui.pin = deck_label(txt, g_font.disp_xl, g_pal.accent2, "");
     lv_obj_set_style_text_letter_space(s_ui.pin, 8, 0);
     s_ui.qr = lv_qrcode_create(s_ui.on_box);
-    lv_qrcode_set_size(s_ui.qr, 170);
+    lv_qrcode_set_size(s_ui.qr, DECK_LP(170, 150));
     lv_qrcode_set_dark_color(s_ui.qr, lv_color_black());
     lv_qrcode_set_light_color(s_ui.qr, lv_color_white());
     lv_qrcode_set_quiet_zone(s_ui.qr, true);
@@ -632,13 +634,14 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
 
     lv_obj_t *root = deck_box(parent);
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_all(root, 20, 0);
+    lv_obj_set_flex_flow(root, DECK_FLOW_SPLIT);
+    lv_obj_set_style_pad_all(root, DECK_LP(20, 16), 0);
     lv_obj_set_style_pad_column(root, 20, 0);
+    lv_obj_set_style_pad_row(root, 16, 0);
 
-    /* Left: browser */
+    /* Left: browser (portrait: top) */
     lv_obj_t *left = deck_panel(root, DECK_CUT_TL | DECK_CUT_BR, 22);
-    lv_obj_set_size(left, 560, LV_PCT(100));
+    lv_obj_set_size(left, DECK_LP(560, LV_PCT(100)), DECK_LP(LV_PCT(100), 470));
     deck_panel_set_tab(left, true);
     lv_obj_set_style_pad_all(left, 22, 0);
     lv_obj_set_flex_flow(left, LV_FLEX_FLOW_COLUMN);
@@ -663,9 +666,13 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_set_width(s_ui.empty, LV_PCT(100));
     lv_label_set_long_mode(s_ui.empty, LV_LABEL_LONG_MODE_WRAP);
 
-    /* Right: tabs */
+    /* Right: tabs (portrait: below, taking the rest) */
     lv_obj_t *right = deck_panel(root, DECK_CUT_TL | DECK_CUT_BR, 22);
-    lv_obj_set_height(right, LV_PCT(100));
+    if (HAL_PORTRAIT) {
+        lv_obj_set_width(right, LV_PCT(100));
+    } else {
+        lv_obj_set_height(right, LV_PCT(100));
+    }
     lv_obj_set_flex_grow(right, 1);
     lv_obj_set_style_pad_all(right, 22, 0);
     lv_obj_set_flex_flow(right, LV_FLEX_FLOW_COLUMN);

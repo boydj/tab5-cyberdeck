@@ -16,6 +16,7 @@
 
 #include "deck_hal.h"
 #include "deck_icons.h"
+#include "deck_layout.h"
 #include "deck_md.h"
 #include "deck_modal.h"
 #include "deck_shell.h"
@@ -87,6 +88,11 @@ static lv_obj_t *tool_button(lv_obj_t *parent, const char *text, lv_event_cb_t c
     lv_obj_t *b = deck_button(parent, text, g_font.disp_s);
     lv_obj_set_style_min_height(b, 46, 0);
     lv_obj_set_style_pad_ver(b, 8, 0);
+    if (HAL_PORTRAIT) {
+        /* Five of these share a 528 px row in a document. */
+        lv_obj_set_style_min_width(b, 72, 0);
+        lv_obj_set_style_pad_hor(b, 16, 0);
+    }
     lv_group_remove_obj(b);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
     return b;
@@ -201,9 +207,19 @@ static void show_browser(const char *focus_name)
     snprintf(info, sizeof(info), "%s  ::  %d FILE%s  ::  %s", dir ? dir : "NO STORAGE", s_n.count,
              s_n.count == 1 ? "" : "S", hal_storage_is_sd() ? "SD" : "INTERNAL FLASH");
     lv_obj_t *path = deck_label(head, g_font.mono_s, g_pal.dim, info);
+#if HAL_PORTRAIT
+    /* Narrow: title and + NEW on one line, the storage info under them. */
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 12);
+    lv_label_set_long_mode(path, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_width(path, LV_PCT(100));
+    lv_obj_align(path, LV_ALIGN_TOP_LEFT, 0, 56);
+    lv_obj_t *nb = tool_button(head, "+ NEW", new_clicked, NULL);
+    lv_obj_align(nb, LV_ALIGN_TOP_RIGHT, 0, 0);
+#else
     lv_obj_align(path, LV_ALIGN_LEFT_MID, 190, 0);
     lv_obj_t *nb = tool_button(head, "+ NEW", new_clicked, NULL);
     lv_obj_align(nb, LV_ALIGN_RIGHT_MID, 0, 0);
+#endif
 
     lv_obj_t *list = deck_box(root);
     lv_obj_set_width(list, LV_PCT(100));
@@ -224,7 +240,7 @@ static void show_browser(const char *focus_name)
     for (int i = 0; i < s_n.count; i++) {
         const note_entry_t *n = &s_n.notes[i];
         lv_obj_t *row         = deck_panel(list, DECK_CUT_BR, 12);
-        lv_obj_set_size(row, LV_PCT(100), 68);
+        lv_obj_set_size(row, LV_PCT(100), DECK_LP(68, 104));
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_CLICK_FOCUSABLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS);
         lv_obj_set_style_pad_hor(row, 18, 0);
         lv_obj_set_user_data(row, (void *)(intptr_t)(i + 1));
@@ -232,7 +248,13 @@ static void show_browser(const char *focus_name)
         lv_group_add_obj(deck_input_group(), row);
 
         lv_obj_t *nm = deck_icon_text(row, ICON_MARKDOWN, n->name, g_font.mono_l, g_pal.text);
-        lv_obj_align(nm, LV_ALIGN_LEFT_MID, 0, 0);
+        /* Portrait: name across the top, size / date and REN DEL below. */
+        lv_obj_align(nm, DECK_LP(LV_ALIGN_LEFT_MID, LV_ALIGN_TOP_LEFT), 0, DECK_LP(0, 12));
+        if (HAL_PORTRAIT) {
+            lv_obj_set_width(nm, LV_PCT(100));
+            lv_label_set_long_mode(lv_obj_get_child(nm, 1), LV_LABEL_LONG_MODE_DOTS);
+            lv_obj_set_flex_grow(lv_obj_get_child(nm, 1), 1);
+        }
 
         char meta[64], sz[16];
         struct tm tm;
@@ -241,18 +263,19 @@ static void show_browser(const char *focus_name)
         snprintf(meta, sizeof(meta), "%s   %04d-%02d-%02d %02d:%02d", sz, tm.tm_year + 1900, tm.tm_mon + 1,
                  tm.tm_mday, tm.tm_hour, tm.tm_min);
         lv_obj_t *m = deck_label(row, g_font.mono_s, g_pal.dim, meta);
-        lv_obj_align(m, LV_ALIGN_RIGHT_MID, -220, 0);
+        lv_obj_align(m, DECK_LP(LV_ALIGN_RIGHT_MID, LV_ALIGN_BOTTOM_LEFT), DECK_LP(-220, 32), DECK_LP(0, -20));
 
         lv_obj_t *del = tool_button(row, "DEL", row_delete, (void *)(intptr_t)(i + 1));
-        lv_obj_align(del, LV_ALIGN_RIGHT_MID, 0, 0);
+        lv_obj_align(del, DECK_LP(LV_ALIGN_RIGHT_MID, LV_ALIGN_BOTTOM_RIGHT), 0, DECK_LP(0, -8));
         lv_obj_t *ren = tool_button(row, "REN", row_rename, (void *)(intptr_t)(i + 1));
-        lv_obj_align(ren, LV_ALIGN_RIGHT_MID, -106, 0);
+        lv_obj_align(ren, DECK_LP(LV_ALIGN_RIGHT_MID, LV_ALIGN_BOTTOM_RIGHT), -106, DECK_LP(0, -8));
 
         if (focus == NULL || (focus_name && strcmp(focus_name, n->name) == 0)) focus = row;
     }
 
     deck_label(root, g_font.mono_s, g_pal.dim,
-               "[ENTER] OPEN    [CTRL+N] NEW    [CTRL+R] RENAME    [DEL] DELETE    [ESC] DECK");
+               DECK_LP("[ENTER] OPEN    [CTRL+N] NEW    [CTRL+R] RENAME    [DEL] DELETE    [ESC] DECK",
+                       "[ENTER] OPEN  [CTRL+N] NEW  [CTRL+R] RENAME\n[DEL] DELETE  [ESC] DECK"));
 
     if (focus) {
         lv_group_focus_obj(focus);
@@ -405,9 +428,11 @@ static void open_doc(const char *name, mode_t_ mode)
     /* Toolbar */
     lv_obj_t *bar = deck_box(root);
     lv_obj_set_width(bar, LV_PCT(100));
-    lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
+    /* Portrait: name on the first line, the buttons wrap to a second. */
+    lv_obj_set_flex_flow(bar, DECK_LP(LV_FLEX_FLOW_ROW, LV_FLEX_FLOW_ROW_WRAP));
     lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(bar, 12, 0);
+    lv_obj_set_style_pad_row(bar, 12, 0);
     lv_obj_t *icon = deck_label(bar, g_font.icon_s, g_pal.accent, ICON_MARKDOWN);
     (void)icon;
     s_n.title = deck_label(bar, g_font.mono_l, g_pal.text, "");
@@ -417,19 +442,30 @@ static void open_doc(const char *name, mode_t_ mode)
     for (int i = 0; i < 3; i++) {
         s_n.mode_btn[i] = tool_button(bar, labels[i], mode_clicked, (void *)(intptr_t)i);
     }
+    if (HAL_PORTRAIT) {
+        lv_obj_add_flag(s_n.mode_btn[0], LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+        lv_label_set_long_mode(s_n.title, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_max_width(s_n.title, HAL_SCREEN_W - 40 - 36 - 120, 0); /* leave the status room */
+    }
     tool_button(bar, "SAVE", save_clicked, NULL);
     tool_button(bar, "CLOSE", close_clicked, NULL);
     update_title();
 
-    /* Body: editor and preview side by side; mode decides who is visible. */
+    /* Body: editor and preview side by side (portrait: editor above the
+     * preview); mode decides who is visible. */
     lv_obj_t *body = deck_box(root);
     lv_obj_set_width(body, LV_PCT(100));
     lv_obj_set_flex_grow(body, 1);
-    lv_obj_set_flex_flow(body, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_flow(body, DECK_FLOW_SPLIT);
     lv_obj_set_style_pad_column(body, 16, 0);
+    lv_obj_set_style_pad_row(body, 16, 0);
 
     s_n.ta = lv_textarea_create(body);
-    lv_obj_set_height(s_n.ta, LV_PCT(100));
+    if (HAL_PORTRAIT) {
+        lv_obj_set_width(s_n.ta, LV_PCT(100));
+    } else {
+        lv_obj_set_height(s_n.ta, LV_PCT(100));
+    }
     lv_obj_set_flex_grow(s_n.ta, 1);
     lv_obj_set_style_text_font(s_n.ta, g_font.mono_m, 0);
     lv_obj_set_style_text_color(s_n.ta, g_pal.text, 0);
@@ -446,9 +482,13 @@ static void open_doc(const char *name, mode_t_ mode)
     free(text);
 
     s_n.preview = deck_panel(body, DECK_CUT_TL | DECK_CUT_BR, 18);
-    lv_obj_set_height(s_n.preview, LV_PCT(100));
+    if (HAL_PORTRAIT) {
+        lv_obj_set_width(s_n.preview, LV_PCT(100));
+    } else {
+        lv_obj_set_height(s_n.preview, LV_PCT(100));
+    }
     lv_obj_set_flex_grow(s_n.preview, 1);
-    lv_obj_set_style_pad_all(s_n.preview, 24, 0);
+    lv_obj_set_style_pad_all(s_n.preview, DECK_LP(24, 20), 0);
     lv_obj_add_flag(s_n.preview, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(s_n.preview, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_n.preview, LV_SCROLLBAR_MODE_AUTO);
@@ -457,7 +497,7 @@ static void open_doc(const char *name, mode_t_ mode)
     s_n.osk = NULL;
     if (!hal_kbd_present()) {
         s_n.osk = lv_keyboard_create(root);
-        lv_obj_set_size(s_n.osk, LV_PCT(100), LV_PCT(40));
+        lv_obj_set_size(s_n.osk, LV_PCT(100), DECK_OSK_H(40));
         lv_keyboard_set_textarea(s_n.osk, s_n.ta);
         lv_group_remove_obj(s_n.osk);
     }

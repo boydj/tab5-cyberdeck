@@ -17,6 +17,7 @@
 
 #include "deck_hal.h"
 #include "deck_icons.h"
+#include "deck_layout.h"
 #include "deck_modal.h"
 #include "deck_net.h"
 #include "deck_shell.h"
@@ -314,7 +315,8 @@ static void render(void)
     for (int i = 0; i < WX_DAYS; i++) {
         if (i >= w->days) continue;
         const wx_day_t *d = &w->day[i];
-        lv_label_set_text(s_ui.day_name[i], i == 0 ? "TODAY" : d->weekday);
+        /* Portrait tiles are ~70 px: "TODAY" does not fit; the tab marks it. */
+        lv_label_set_text(s_ui.day_name[i], i == 0 && !HAL_PORTRAIT ? "TODAY" : d->weekday);
         lv_label_set_text(s_ui.day_icon[i], wx_code_icon(d->code, true));
         fmt_temp(buf, sizeof(buf), d->hi);
         lv_label_set_text(s_ui.day_hi[i], buf);
@@ -389,13 +391,14 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
 
     lv_obj_t *root = deck_box(parent);
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_all(root, 20, 0);
+    lv_obj_set_flex_flow(root, DECK_FLOW_SPLIT);
+    lv_obj_set_style_pad_all(root, DECK_LP(20, 16), 0);
     lv_obj_set_style_pad_column(root, 20, 0);
+    lv_obj_set_style_pad_row(root, 16, 0);
 
-    /* Left: now */
+    /* Left: now (portrait: top, as tall as its rows) */
     lv_obj_t *hero = deck_panel(root, DECK_CUT_TL | DECK_CUT_BR, 22);
-    lv_obj_set_size(hero, 430, LV_PCT(100));
+    lv_obj_set_size(hero, DECK_LP(430, LV_PCT(100)), DECK_LP(LV_PCT(100), LV_SIZE_CONTENT));
     deck_panel_set_tab(hero, true);
     lv_obj_set_style_pad_all(hero, 24, 0);
     lv_obj_set_flex_flow(hero, LV_FLEX_FLOW_COLUMN);
@@ -422,23 +425,31 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_set_flex_grow(spacer, 1);
     s_ui.status = deck_label(hero, g_font.mono_s, g_pal.dim, "");
 
-    /* Right: trace + week */
+    /* Right: trace + week (portrait: below the hero) */
     lv_obj_t *right = deck_box(root);
-    lv_obj_set_height(right, LV_PCT(100));
+    if (HAL_PORTRAIT) {
+        lv_obj_set_width(right, LV_PCT(100));
+    } else {
+        lv_obj_set_height(right, LV_PCT(100));
+    }
     lv_obj_set_flex_grow(right, 1);
     lv_obj_set_flex_flow(right, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(right, 14, 0);
 
     lv_obj_t *head = deck_box(right);
     lv_obj_set_width(head, LV_PCT(100));
-    lv_obj_set_flex_flow(head, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(head, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    /* Portrait: the buttons wrap onto a line of their own. */
+    lv_obj_set_flex_flow(head, DECK_LP(LV_FLEX_FLOW_ROW, LV_FLEX_FLOW_ROW_WRAP));
+    lv_obj_set_flex_align(head, DECK_LP(LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END), LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(head, 12, 0);
+    lv_obj_set_style_pad_row(head, 10, 0);
     lv_obj_t *t = deck_label(head, g_font.disp_s, g_pal.accent, "// 24H TRACE");
     lv_obj_set_flex_grow(t, 1);
     deck_label(head, g_font.mono_s, g_pal.accent, "TEMP");
     deck_label(head, g_font.mono_s, g_pal.accent2, "RAIN %");
-    tool_button(head, "LOCATION", loc_clicked);
+    lv_obj_t *loc = tool_button(head, "LOCATION", loc_clicked);
+    if (HAL_PORTRAIT) lv_obj_add_flag(loc, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
     s_ui.units_btn = tool_button(head, "\xC2\xB0" "F", units_clicked);
     tool_button(head, "REFRESH", refresh_clicked);
 
@@ -474,10 +485,11 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_t *week = deck_box(right);
     lv_obj_set_width(week, LV_PCT(100));
     lv_obj_set_flex_flow(week, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(week, 10, 0);
+    lv_obj_set_style_pad_column(week, DECK_LP(10, 6), 0);
     for (int i = 0; i < WX_DAYS; i++) {
         lv_obj_t *d = deck_panel(week, DECK_CUT_BR, 12);
-        lv_obj_set_height(d, 196);
+        lv_obj_set_height(d, DECK_LP(196, 180));
+        if (HAL_PORTRAIT) lv_obj_set_width(d, 1); /* equal shares of the row (flex grow) */
         lv_obj_set_flex_grow(d, 1);
         lv_obj_set_style_pad_ver(d, 12, 0);
         lv_obj_set_flex_flow(d, LV_FLEX_FLOW_COLUMN);

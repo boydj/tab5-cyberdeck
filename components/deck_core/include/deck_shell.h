@@ -8,6 +8,7 @@
 
 #include "deck_app.h"
 #include "deck_input.h"
+#include "deck_layout.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,7 +16,8 @@ extern "C" {
 
 #define DECK_VERSION "1.1.0"
 
-#define DECK_STATUSBAR_H 56
+/* Portrait: two rows (title + clock, then date + indicators). */
+#define DECK_STATUSBAR_H DECK_LP(56, 92)
 
 /* Build the shell. With `boot_anim`, play the POST sequence first. */
 void deck_shell_start(bool boot_anim);

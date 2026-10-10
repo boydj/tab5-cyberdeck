@@ -9,6 +9,10 @@
  *            [--key MS:SPEC]...   SPEC like esc, enter, left, a, 5, comma, alt+2, ctrl+s, shift+9
  *            [--tap MS:X,Y]...
  *            [--shot MS:FILE.ppm]...
+ *            [--cfg KEY=INT]... [--cfgs KEY=STR]...   preset settings (e.g. --cfg scan=0)
+ *            [--stub]   add an OFFLINE module to exercise the "module offline" screen
+ * Environment: DECK_SIM_NO_KBD=1 (no keyboard: on-screen keyboards),
+ *              SIM_HOSTKEY=new|changed (host key dialogs), SIM_OTA_NEWER=0.
  */
 #include <SDL.h>
 #include <stdio.h>
@@ -17,6 +21,7 @@
 #include <unistd.h>
 
 #include "deck_hal.h"
+#include "deck_icons.h"
 #include "deck_input.h"
 #include "deck_shell.h"
 #include "deck_theme.h"
@@ -204,6 +209,20 @@ static void headless_loop(lv_display_t *disp)
 
 /* ---- Window mode --------------------------------------------------------- */
 
+/* ---- Offline module (--stub) --------------------------------------------- */
+
+static bool stub_start(deck_app_t *self, lv_obj_t *parent)
+{
+    return deck_stub_screen(self, parent,
+                            "> uplink module scheduled for a later build\n"
+                            "> mesh relay, store-and-forward messages\n"
+                            "> waiting on radio bring-up");
+}
+
+static deck_app_t s_stub_app = {
+    .name = "MESH", .tagline = "RADIO RELAY", .icon = ICON_SERVER, .eta = "v1.2", .on_start = stub_start,
+};
+
 static int key_watch(void *ud, SDL_Event *ev)
 {
     (void)ud;
@@ -223,7 +242,7 @@ static int key_watch(void *ud, SDL_Event *ev)
 
 int main(int argc, char **argv)
 {
-    bool headless = false, boot = true;
+    bool headless = false, boot = true, stub = false;
     int accent    = -1;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -238,6 +257,20 @@ int main(int argc, char **argv)
             boot = false;
         } else if (strcmp(a, "--accent") == 0) {
             accent = atoi(v);
+            i++;
+        } else if (strcmp(a, "--stub") == 0) {
+            stub = true;
+        } else if (strcmp(a, "--cfg") == 0 || strcmp(a, "--cfgs") == 0) {
+            char key[32];
+            const char *eq = strchr(v, '=');
+            if (eq && (size_t)(eq - v) < sizeof(key)) {
+                snprintf(key, sizeof(key), "%.*s", (int)(eq - v), v);
+                if (a[5] == 's') {
+                    hal_cfg_set_str(key, eq + 1);
+                } else {
+                    hal_cfg_set_i32(key, atoi(eq + 1));
+                }
+            }
             i++;
         } else if (strcmp(a, "--type") == 0) {
             /* --type MS:TEXT  ("\n" in TEXT presses Enter); one key every 40 ms */
@@ -298,6 +331,7 @@ int main(int argc, char **argv)
     deck_app_register(app_player());
     deck_app_register(app_files());
     deck_app_register(app_sys());
+    if (stub) deck_app_register(&s_stub_app);
     deck_shell_start(boot);
 
     if (headless) {

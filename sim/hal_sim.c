@@ -53,7 +53,8 @@ bool hal_key_poll(hal_key_t *out)
     return true;
 }
 
-bool hal_kbd_present(void) { return true; }
+/* DECK_SIM_NO_KBD=1 pretends the keyboard is unplugged (on-screen keyboards). */
+bool hal_kbd_present(void) { return getenv("DECK_SIM_NO_KBD") == NULL; }
 uint8_t hal_kbd_fw_version(void) { return 0x12; }
 
 void hal_power_read(hal_power_t *out)
@@ -154,8 +155,13 @@ bool hal_cfg_encrypted(void) { return false; }
 void hal_speaker_amp(bool on) { (void)on; }
 bool hal_headphones(void) { return getenv("DECK_SIM_HEADPHONES") != NULL; }
 
-/* Notes live in sim/sdcard (created on demand). */
-const char *hal_storage_root(void) { return DECK_SIM_SDCARD; }
+/* Notes live in sim/sdcard (created on demand); DECK_SIM_SDCARD_DIR points
+ * the "card" elsewhere (scripted screenshots use a fixed fixture copy). */
+const char *hal_storage_root(void)
+{
+    const char *d = getenv("DECK_SIM_SDCARD_DIR");
+    return d && d[0] ? d : DECK_SIM_SDCARD;
+}
 bool hal_storage_is_sd(void) { return true; }
 
 bool hal_sd_mounted(void) { return true; }
@@ -186,7 +192,11 @@ void hal_cfg_set_i32(const char *key, int32_t value)
 
 void hal_sysinfo(hal_sysinfo_t *out)
 {
+#ifdef DECK_BOARD_TDISPLAY_P4
+    out->board          = "T-DISPLAY P4 / SIM";
+#else
     out->board          = "TAB5 / SIM";
+#endif
     out->chip           = "ESP32-P4 rev1.0 x2";
     out->cpu_mhz        = 360;
     out->heap_int_free  = 412 * 1024;

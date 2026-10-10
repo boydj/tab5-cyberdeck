@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "deck_hal.h"
+#include "deck_layout.h"
 #include "deck_modal.h"
 #include "deck_net.h"
 #include "deck_ota.h"
@@ -76,9 +77,14 @@ void deck_update_install(void)
     lv_obj_center(col);
     lv_obj_t *t = deck_label(col, g_font.disp_l, g_pal.accent, "");
     lv_label_set_text_fmt(t, "FLASHING v%s", ota_latest());
+#if HAL_PORTRAIT
+    lv_obj_t *sub = deck_label(col, g_font.mono_m, g_pal.dim, "WRITING TO THE IDLE SLOT\nTHE RUNNING BUILD STAYS UNTIL VERIFIED");
+    lv_obj_set_style_text_align(sub, LV_TEXT_ALIGN_CENTER, 0);
+#else
     deck_label(col, g_font.mono_m, g_pal.dim, "WRITING TO THE IDLE SLOT // THE RUNNING BUILD STAYS UNTIL VERIFIED");
+#endif
     s_flash_bar = lv_bar_create(col);
-    lv_obj_set_size(s_flash_bar, 760, 22);
+    lv_obj_set_size(s_flash_bar, DECK_FIT_W(760, 40), 22);
     lv_bar_set_range(s_flash_bar, 0, 100);
     lv_obj_set_style_radius(s_flash_bar, 0, 0);
     lv_obj_set_style_radius(s_flash_bar, 0, LV_PART_INDICATOR);

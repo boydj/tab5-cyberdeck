@@ -5,6 +5,7 @@
 
 #include "deck_hal.h"
 #include "deck_input.h"
+#include "deck_layout.h"
 #include "deck_theme.h"
 #include "deck_widgets.h"
 
@@ -30,6 +31,7 @@ static struct {
 } s_m;
 
 #define DANGER_ARM_MS 1000
+#define MODAL_MARGIN 16 /* screen edge to dialog, when the screen is narrower than the dialog */
 
 bool deck_modal_active(void) { return s_m.kind != MODAL_NONE; }
 
@@ -145,8 +147,8 @@ static lv_obj_t *begin_build(modal_kind_t kind, const char *title, void *user)
     lv_obj_t *p = deck_panel(s_m.root, DECK_CUT_TL | DECK_CUT_BR, 22);
     deck_panel_set_tab(p, true);
     deck_panel_set_outline(p, g_pal.accent);
-    lv_obj_set_size(p, 720, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(p, 30, 0);
+    lv_obj_set_size(p, DECK_FIT_W(720, MODAL_MARGIN), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(p, DECK_LP(30, 22), 0);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(p, 20, 0);
     deck_section(p, title);
@@ -172,7 +174,7 @@ static void end_build(lv_obj_t *panel, const char *ok_label)
     /* No physical keyboard: give the prompt an on-screen one. */
     if (s_m.ta && !hal_kbd_present()) {
         lv_obj_t *kb = lv_keyboard_create(s_m.root);
-        lv_obj_set_size(kb, LV_PCT(100), LV_PCT(42));
+        lv_obj_set_size(kb, LV_PCT(100), DECK_OSK_H(42));
         lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
         lv_keyboard_set_textarea(kb, s_m.ta);
         lv_obj_add_event_cb(kb, ok_clicked, LV_EVENT_READY, NULL);
@@ -238,7 +240,7 @@ void deck_modal_list(const char *title, const char *const *items, int count, dec
 
     lv_obj_t *list = deck_box(p);
     lv_obj_set_width(list, LV_PCT(100));
-    lv_obj_set_style_max_height(list, 380, 0);
+    lv_obj_set_style_max_height(list, DECK_LP(380, 640), 0);
     lv_obj_set_height(list, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(list, 8, 0);
@@ -255,6 +257,10 @@ void deck_modal_list(const char *title, const char *const *items, int count, dec
         lv_group_add_obj(s_m.group, row);
         lv_obj_t *l = deck_label(row, g_font.mono_m, g_pal.text, items[i]);
         lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
+        if (HAL_PORTRAIT) { /* one line, cut with dots, on the narrow dialog */
+            lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+            lv_obj_set_size(l, LV_PCT(100), lv_font_get_line_height(g_font.mono_m));
+        }
         if (i == 0) s_m.first_row = row;
     }
     if (count == 0) deck_label(list, g_font.mono_m, g_pal.dim, "Nothing found.");
@@ -292,9 +298,22 @@ void deck_modal_choice(const char *title, const char *message, const char *later
 void deck_modal_info(const char *title, const char *const *columns, int count)
 {
     lv_obj_t *p    = begin_build(MODAL_CONFIRM, title, NULL);
-    lv_obj_set_width(p, 1040);
+    lv_obj_set_width(p, DECK_FIT_W(1040, MODAL_MARGIN));
     lv_obj_t *cols = deck_box(p);
     lv_obj_set_size(cols, LV_PCT(100), LV_SIZE_CONTENT);
+#if HAL_PORTRAIT
+    /* Narrow screen: the columns follow each other, scrolling if need be. */
+    lv_obj_set_flex_flow(cols, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(cols, 22, 0);
+    lv_obj_set_style_max_height(cols, HAL_SCREEN_H - 250, 0);
+    lv_obj_add_flag(cols, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(cols, LV_DIR_VER);
+    for (int i = 0; i < count; i++) {
+        lv_obj_t *l = deck_label(cols, g_font.mono_s, g_pal.text, columns[i]);
+        lv_obj_set_width(l, LV_PCT(100));
+        lv_obj_set_style_text_line_space(l, 5, 0);
+    }
+#else
     lv_obj_set_flex_flow(cols, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(cols, 40, 0);
     for (int i = 0; i < count; i++) {
@@ -302,6 +321,7 @@ void deck_modal_info(const char *title, const char *const *columns, int count)
         lv_obj_set_flex_grow(l, 1);
         lv_obj_set_style_text_line_space(l, 5, 0);
     }
+#endif
     end_build(p, NULL); /* a single button: rename it, Enter and Esc both close */
     lv_label_set_text(lv_obj_get_child_by_type(s_m.cancel_btn, 0, &lv_label_class), "CLOSE");
 }

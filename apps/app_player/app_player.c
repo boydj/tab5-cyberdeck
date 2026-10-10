@@ -19,12 +19,14 @@
 #include "deck_hal.h"
 #include "deck_icons.h"
 #include "deck_input.h"
+#include "deck_layout.h"
 #include "deck_shell.h"
 #include "deck_theme.h"
 #include "deck_widgets.h"
 
 #define MAX_ROWS 200
-#define VIS_H 170
+#define VIS_H DECK_LP(170, 150)
+#define BAR_W DECK_LP(30, 24) /* spectrum bar width */
 
 typedef struct {
     char name[96];
@@ -268,6 +270,11 @@ static lv_obj_t *ctl_button(lv_obj_t *parent, const char *icon, intptr_t id, int
     lv_obj_t *b = deck_button(parent, icon, g_font.icon_m);
     lv_obj_set_size(b, w, 72);
     lv_obj_set_style_pad_all(b, 0, 0);
+    if (HAL_PORTRAIT) {
+        /* Share the narrow row by weight (w) instead of deck_button's 96 px minimum. */
+        lv_obj_set_style_min_width(b, 0, 0);
+        lv_obj_set_flex_grow(b, (uint8_t)(w / 12));
+    }
     lv_obj_add_event_cb(b, ctl_clicked, LV_EVENT_CLICKED, (void *)id);
     return b;
 }
@@ -299,13 +306,19 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
 
     lv_obj_t *root = deck_box(parent);
     lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_all(root, 20, 0);
+    lv_obj_set_flex_flow(root, DECK_FLOW_SPLIT);
+    lv_obj_set_style_pad_all(root, DECK_LP(20, 16), 0);
     lv_obj_set_style_pad_column(root, 20, 0);
+    lv_obj_set_style_pad_row(root, 16, 0);
 
-    /* Left: library */
+    /* Left: library (portrait: below now playing, taking the rest) */
     lv_obj_t *left = deck_panel(root, DECK_CUT_TL | DECK_CUT_BR, 22);
-    lv_obj_set_size(left, 500, LV_PCT(100));
+    if (HAL_PORTRAIT) {
+        lv_obj_set_width(left, LV_PCT(100));
+        lv_obj_set_flex_grow(left, 1);
+    } else {
+        lv_obj_set_size(left, 500, LV_PCT(100));
+    }
     deck_panel_set_tab(left, true);
     lv_obj_set_style_pad_all(left, 22, 0);
     lv_obj_set_flex_flow(left, LV_FLEX_FLOW_COLUMN);
@@ -324,11 +337,16 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_set_width(s_ui.empty, LV_PCT(100));
     lv_label_set_long_mode(s_ui.empty, LV_LABEL_LONG_MODE_WRAP);
 
-    /* Right: now playing */
+    /* Right: now playing (portrait: on top, as tall as its controls) */
     lv_obj_t *right = deck_panel(root, DECK_CUT_TL | DECK_CUT_BR, 22);
-    lv_obj_set_height(right, LV_PCT(100));
-    lv_obj_set_flex_grow(right, 1);
-    lv_obj_set_style_pad_all(right, 26, 0);
+    if (HAL_PORTRAIT) {
+        lv_obj_set_size(right, LV_PCT(100), LV_SIZE_CONTENT);
+        lv_obj_move_to_index(right, 0);
+    } else {
+        lv_obj_set_height(right, LV_PCT(100));
+        lv_obj_set_flex_grow(right, 1);
+    }
+    lv_obj_set_style_pad_all(right, DECK_LP(26, 22), 0);
     lv_obj_set_flex_flow(right, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(right, 12, 0);
     deck_section(right, "NOW PLAYING");
@@ -346,7 +364,7 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     for (int i = 0; i < PLAYER_BANDS; i++) {
         lv_obj_t *b = lv_obj_create(vis);
         lv_obj_remove_style_all(b);
-        lv_obj_set_size(b, 30, 4);
+        lv_obj_set_size(b, BAR_W, 4);
         lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(b, g_pal.accent, 0);
         lv_obj_set_style_bg_grad_color(b, g_pal.accent2, 0);
@@ -398,8 +416,10 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     lv_obj_align(s_ui.vol_val, LV_ALIGN_RIGHT_MID, 0, 0);
 
     lv_obj_t *hint = deck_label(right, g_font.mono_s, g_pal.dim,
-                                "SPACE pause   LEFT/RIGHT seek   [ ] prev/next   - = volume\n"
-                                "S shuffle   R repeat   ALT+P pause from anywhere");
+                                DECK_LP("SPACE pause   LEFT/RIGHT seek   [ ] prev/next   - = volume\n"
+                                        "S shuffle   R repeat   ALT+P pause from anywhere",
+                                        "SPACE pause  LEFT/RIGHT seek  [ ] prev/next\n"
+                                        "- = volume  S shuffle  R repeat  ALT+P pause"));
     lv_obj_set_width(hint, LV_PCT(100));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_MODE_WRAP);
 

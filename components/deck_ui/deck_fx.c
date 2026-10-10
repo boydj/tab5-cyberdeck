@@ -3,12 +3,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "deck_hal.h"
+#include "deck_layout.h"
 #include "deck_theme.h"
 
 /* ---- Glitch transition --------------------------------------------------- */
 
 #define GLITCH_BARS 9
 #define GLITCH_TICK_MS 33
+#define GLITCH_MIN_W DECK_LP(200, 120) /* narrowest bar */
 
 typedef struct {
     lv_obj_t *layer;
@@ -30,9 +33,9 @@ static void glitch_shuffle(glitch_t *g)
     for (int i = 0; i < GLITCH_BARS; i++) {
         lv_obj_t *b = g->bars[i];
         int32_t h   = 4 + (int32_t)lv_rand(0, 38);
-        int32_t w   = 200 + (int32_t)lv_rand(0, 1080);
+        int32_t w   = GLITCH_MIN_W + (int32_t)lv_rand(0, HAL_SCREEN_W - GLITCH_MIN_W);
         lv_obj_set_size(b, w, h);
-        lv_obj_set_pos(b, (int32_t)lv_rand(0, 1280) - w / 3, (int32_t)lv_rand(0, 720));
+        lv_obj_set_pos(b, (int32_t)lv_rand(0, HAL_SCREEN_W) - w / 3, (int32_t)lv_rand(0, HAL_SCREEN_H));
         uint32_t c = (i % 3 == 0) ? lv_color_to_u32(g_pal.accent) & 0xFFFFFF : colors[lv_rand(0, 3)];
         lv_obj_set_style_bg_color(b, lv_color_hex(c), 0);
         lv_obj_set_style_bg_opa(b, (lv_opa_t)lv_rand(90, 230), 0);
