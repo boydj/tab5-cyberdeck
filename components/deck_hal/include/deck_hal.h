@@ -87,11 +87,20 @@ void hal_speaker_amp(bool on);
 bool hal_headphones(void);
 /* Tab5 only: the system I2C bus (i2c_master_bus_handle_t) for the codec. */
 void *hal_tab5_sys_i2c(void);
+/* The I2C bus (i2c_master_bus_handle_t) the audio codec sits on, any board. */
+void *hal_codec_i2c(void);
 
 /* Keyboard LEDs. brightness 0..100 (0 = off). With use_color the LEDs show
  * `rgb` (0xRRGGBB); otherwise the keyboard's own status colors (Caps/Sym).
  * Remembered and re-applied whenever the keyboard is (re)attached. */
 void hal_kbd_light(uint8_t brightness, bool use_color, uint32_t rgb);
+
+/* ---- Radio --------------------------------------------------------------- */
+
+/* Prepare the Wi-Fi co-processor link. deck_net calls this once, from its own
+ * task, before the first esp_wifi_init(). Returns false if the radio cannot
+ * be brought up (Wi-Fi then stays off). */
+bool hal_radio_init(void);
 
 /* ---- Power --------------------------------------------------------------- */
 

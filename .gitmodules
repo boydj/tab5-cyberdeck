@@ -1,0 +1,3 @@
+[submodule "third_party/esp-hosted-mcu-lilygo"]
+	path = third_party/esp-hosted-mcu-lilygo
+	url = https://github.com/Llgok/esp-hosted-mcu.git

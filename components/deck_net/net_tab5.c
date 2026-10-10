@@ -1,9 +1,11 @@
 /*
- * Wi-Fi on the Tab5: the radio is an ESP32-C6 running M5Stack's ESP-Hosted
- * slave firmware, reached over SDIO. esp_wifi_remote makes the usual
+ * Wi-Fi on the Tab5 and the T-Display P4: the radio is an ESP32-C6 running
+ * ESP-Hosted slave firmware (M5Stack's on the Tab5, LilyGo's network adapter
+ * on the T-Display P4), reached over SDIO. esp_wifi_remote makes the usual
  * esp_wifi_* API work across that link, so this reads like ordinary
- * ESP-IDF station code. The first esp_wifi_init() resets the C6 and waits
- * for it, which can take a few seconds, so everything runs on a task.
+ * ESP-IDF station code. hal_radio_init() does any board-specific link setup;
+ * the first esp_wifi_init() then resets the C6 and waits for it, which can
+ * take a few seconds, so everything runs on a task.
  */
 #include "deck_net.h"
 
@@ -145,6 +147,12 @@ static void apply_config(const char *ssid, const char *pass)
 static void net_task(void *arg)
 {
     (void)arg;
+    if (!hal_radio_init()) { /* board-specific co-processor bring-up */
+        ESP_LOGE(TAG, "Wi-Fi radio (ESP32-C6) not available: link setup failed");
+        s_state = NET_NO_RADIO;
+        vTaskDelete(NULL);
+        return;
+    }
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_err_t err          = esp_wifi_init(&cfg); /* resets the C6 and waits for the SDIO link */
     if (err != ESP_OK) {

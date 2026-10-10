@@ -1,0 +1,19 @@
+menu "DECK//OS board"
+
+    choice DECK_BOARD
+        prompt "Target board"
+        default DECK_BOARD_TAB5
+        help
+            Hardware the firmware is built for. Each board has its own
+            deck_hal implementation and sdkconfig defaults; build with
+            -DDECK_BOARD=<name> so the matching defaults and components are
+            used (see README).
+
+        config DECK_BOARD_TAB5
+            bool "M5Stack Tab5 + Tab5 Keyboard"
+
+        config DECK_BOARD_TDISPLAY_P4
+            bool "LilyGo T-Display P4 (4.1in AMOLED, v1.0) + K270 keyboard"
+    endchoice
+
+endmenu

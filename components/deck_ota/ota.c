@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "deck_hal.h"
 #include "deck_net.h"
 #include "esp_app_desc.h"
 #include "esp_crt_bundle.h"
@@ -18,7 +19,18 @@
 
 static const char *TAG = "ota";
 
+#ifdef CONFIG_DECK_OTA_REPO
+#define REPO CONFIG_DECK_OTA_REPO
+#else
 #define REPO "hey-its-brian/tab5-cyberdeck"
+#endif
+/* Images are board-specific: a Tab5 image boots on a T-Display P4 with the
+ * wrong pins (and the reverse), so each board only accepts its own. */
+#ifdef DECK_BOARD_TDISPLAY_P4
+#define ASSET_SUFFIX "-tdisplay-p4-ota.bin"
+#else
+#define ASSET_SUFFIX "-ota.bin"
+#endif
 #define URL_LATEST "https://api.github.com/repos/" REPO "/releases/latest"
 #define URL_LIST "https://api.github.com/repos/" REPO "/releases?per_page=8"
 #define ASSET_PREFIX "https://github.com/" REPO "/releases/download/" /* only ever download from here */
@@ -92,9 +104,12 @@ static bool read_release(const cJSON *rel)
         const cJSON *name = cJSON_GetObjectItemCaseSensitive(a, "name");
         const cJSON *url  = cJSON_GetObjectItemCaseSensitive(a, "browser_download_url");
         if (cJSON_IsString(name) && cJSON_IsString(url)) {
-            size_t n = strlen(name->valuestring);
-            if (n > 8 && strcmp(name->valuestring + n - 8, "-ota.bin") == 0 &&
-                strncmp(url->valuestring, ASSET_PREFIX, strlen(ASSET_PREFIX)) == 0) {
+            size_t n = strlen(name->valuestring), sl = strlen(ASSET_SUFFIX);
+            bool ours = n > sl && strcmp(name->valuestring + n - sl, ASSET_SUFFIX) == 0;
+#ifndef DECK_BOARD_TDISPLAY_P4
+            if (strstr(name->valuestring, "-tdisplay-p4-") != NULL) ours = false;
+#endif
+            if (ours && strncmp(url->valuestring, ASSET_PREFIX, strlen(ASSET_PREFIX)) == 0) {
                 snprintf(s_asset_url, sizeof(s_asset_url), "%s", url->valuestring);
                 break;
             }

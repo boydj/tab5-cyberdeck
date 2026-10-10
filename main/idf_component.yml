@@ -5,3 +5,17 @@ dependencies:
   lvgl/lvgl: "9.5.0"
   espressif/esp_lvgl_port: "2.8.0~1"
   espressif/i2c_bus: "^1.5.1"
+
+  # ---- T-Display P4 only (-DDECK_BOARD=tdisplay_p4) ------------------------
+  # LilyGo's ESP-Hosted fork (2.12.3 + external reset callback, the C6 enable
+  # is on an IO expander), matching the C6 network-adapter firmware from
+  # LilyGo's factory image. Git submodule: run `git submodule update --init`.
+  espressif/esp_hosted:
+    version: "*"
+    override_path: "../third_party/esp-hosted-mcu-lilygo"
+    rules:
+      - if: "$CONFIG{DECK_BOARD_TDISPLAY_P4} == True"
+  espressif/esp_wifi_remote:
+    version: ">=1.6.1,<2.0"
+    rules:
+      - if: "$CONFIG{DECK_BOARD_TDISPLAY_P4} == True"

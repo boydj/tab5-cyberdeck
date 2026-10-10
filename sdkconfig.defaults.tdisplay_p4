@@ -1,0 +1,38 @@
+# ---- LilyGo T-Display P4 v1.0 (4.1" AMOLED) + K270 keyboard -----------------
+# Applied on top of sdkconfig.defaults by -DDECK_BOARD=tdisplay_p4.
+CONFIG_DECK_BOARD_TDISPLAY_P4=y
+
+# LilyGo ships ESP32-P4 revision 1.x silicon: build for pre-v3 chips
+# (ESP-IDF 5.5.3+ otherwise targets v3.x and the image will not boot).
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_0=y
+
+# ---- Wi-Fi: ESP32-C6 over SDIO slot 1 (ESP-Hosted, LilyGo's fork 2.12.3) ----
+# Pairs with the network-adapter firmware LilyGo's factory image (LilygoBox)
+# installs on the C6. The C6 enable sits on the XL9535 expander, so the HAL
+# registers a reset callback and starts ESP-Hosted itself.
+CONFIG_ESP_HOSTED_AUTO_INIT=n
+CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
+CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=y
+CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
+CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y
+CONFIG_ESP_HOSTED_SDIO_CLOCK_FREQ_KHZ=40000
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CMD_SLOT_1=19
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CLK_SLOT_1=18
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D0_SLOT_1=14
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D1_4BIT_BUS_SLOT_1=15
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D2_4BIT_BUS_SLOT_1=16
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D3_4BIT_BUS_SLOT_1=17
+# The reset callback drives the enable (high = run); the GPIO is unused, so
+# point it at GPIO 51 (TFT backlight on the other variant, free on the AMOLED)
+# instead of the Tab5's GPIO 15, which is SDIO D1 here.
+CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=y
+# CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_LOW is not set
+CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=51
+# Keep internal DMA memory for the SDIO link and TLS (LilyGo's settings).
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
+# ---- Display ------------------------------------------------------------------
+# Native portrait AMOLED: no PPA rotation needed.
+# CONFIG_LVGL_PORT_ENABLE_PPA is not set

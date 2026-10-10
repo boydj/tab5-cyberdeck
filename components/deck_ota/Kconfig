@@ -1,0 +1,12 @@
+menu "DECK//OS updates"
+
+    config DECK_OTA_REPO
+        string "GitHub repository for over-the-air updates"
+        default "hey-its-brian/tab5-cyberdeck"
+        help
+            owner/name of the repository whose Releases carry update images.
+            The Tab5 takes assets ending in -ota.bin; the T-Display P4 only
+            takes assets ending in -tdisplay-p4-ota.bin, so it never installs
+            a Tab5 image.
+
+endmenu
