@@ -245,10 +245,13 @@ the USB-UART bridge (UART0, auto-reset); the P4's USB Serial/JTAG is not on
 a connector. Settings land in `sdkconfig.tdisplay_p4`; delete it after pulling changes
 to `sdkconfig.defaults*`, since an existing sdkconfig keeps its old values.
 
-- **Wi-Fi** needs LilyGo's ESP-Hosted network adapter (2.12.x) on the C6, the
-  firmware LilyGo's factory image (LilygoBox) installs. A C6 still running
-  ESP-AT shows `NO RADIO`; flash the adapter from a LilygoBox release over
-  the C6 UART header (see LilyGo's T-Display-P4 README).
+- **Wi-Fi** needs LilyGo's ESP-Hosted network adapter (2.12.x) on the C6.
+  Boards can ship with ESP-AT on the C6 instead (the log then shows
+  `H_SDIO_DRV: len[25970]>max...`, which is ESP-AT's `ready` banner); the deck
+  then shows `NO RADIO`. Flash `lilygobox-t-display-p4-device-v1.0-esp32c6-*-merged.bin`
+  from a LilygoBox release at 0x0 through the C6's 4-pin UART connector with a
+  3.3 V USB-UART adapter, while the P4 runs LilyGo's `coprocessor_download_mode`
+  firmware (see LilyGo's T-Display-P4 README), then reflash DECK//OS.
 - **Keyboard:** Fn gives the symbols printed on the keys, Fn+arrows are
   Home/End/PgUp/PgDn, Fn+Backspace is Delete, the mic key is F12. Caps Lock
   lights LED 1. Power both halves off before docking or undocking.
