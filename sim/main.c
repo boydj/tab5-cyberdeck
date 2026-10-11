@@ -12,6 +12,7 @@
  *            [--cfg KEY=INT]... [--cfgs KEY=STR]...   preset settings (e.g. --cfg scan=0)
  *            [--stub]   add an OFFLINE module to exercise the "module offline" screen
  *            [--no-kbd]  keyboard undocked (on-screen keyboards, AUTO rotation)
+ *            [--no-radio]  Wi-Fi radio missing (NO RADIO; REPAIR on the T-Display build)
  *            [--tilt MS:DEG]...  T-Display build: the deck is now held at 0, 90
  *                       (turned clockwise) or 270 (counterclockwise); F8 in the window
  * Environment: DECK_SIM_NO_KBD=1 (no keyboard: on-screen keyboards),
@@ -285,6 +286,8 @@ int main(int argc, char **argv)
             i++;
         } else if (strcmp(a, "--stub") == 0) {
             stub = true;
+        } else if (strcmp(a, "--no-radio") == 0) {
+            setenv("DECK_SIM_NO_RADIO", "1", 1); /* the C6 did not answer */
         } else if (strcmp(a, "--no-kbd") == 0) {
             setenv("DECK_SIM_NO_KBD", "1", 1); /* undocked: AUTO rotation follows --tilt */
         } else if (strcmp(a, "--tilt") == 0 && s_ev_n < 512) {

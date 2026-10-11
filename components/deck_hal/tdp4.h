@@ -98,6 +98,14 @@ const char *tdp4_orient_sensor(void);       /* NULL if none */
 hal_rot_t tdp4_orient_sensed(void);         /* debounced, from the sensor alone */
 bool tdp4_orient_calibrate(int step);
 
+/* ---- Radio repair (tdp4_c6_repair.c) ------------------------------------- */
+
+/* With ESP-AT on the C6: join `ssid` through AT commands and have the C6
+ * download and install the network adapter from `url` (AT+USEROTA), then
+ * restart the deck. Runs in its own task; ESP-Hosted must not be started. */
+void tdp4_c6_repair_start(const char *ssid, const char *pass, const char *url);
+bool tdp4_c6_repair_status(char *out, size_t n);
+
 #ifdef __cplusplus
 }
 #endif

@@ -36,6 +36,7 @@
 #include "esp_heap_caps.h"
 #include "esp_ldo_regulator.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_vfs_fat.h"
 #include "freertos/FreeRTOS.h"
@@ -557,12 +558,51 @@ static esp_err_t c6_reset_cb(void *arg, bool level)
     return tdp4_xl_write(TDP4_XL_C6_EN, level) ? ESP_OK : ESP_FAIL;
 }
 
+/* LilyGo's ESP-Hosted network adapter for this board's C6 (LilygoBox
+ * release), matching the host side DECK//OS is built with (2.12.3). */
+#define C6_ADAPTER_URL                                                                                        \
+    "https://github.com/Xinyuan-LilyGO/lilygobox-espidf/releases/download/v1.1.2/"                            \
+    "lilygobox-t-display-p4-device-v1.0-esp32c6-rev0.0-v2.12.3.bin"
+
+bool hal_radio_repair_supported(void) { return true; }
+const char *hal_radio_repair_default_url(void) { return C6_ADAPTER_URL; }
+
+void hal_radio_repair_request(const char *ssid, const char *pass, const char *url)
+{
+    hal_cfg_set_str("rfx_ssid", ssid);
+    hal_cfg_set_str("rfx_pass", pass);
+    hal_cfg_set_str("rfx_url", url && url[0] ? url : C6_ADAPTER_URL);
+    hal_cfg_set_i32("rfx", 1);
+    ESP_LOGW(TAG, "radio repair requested; restarting");
+    vTaskDelay(pdMS_TO_TICKS(200)); /* let the log and NVS settle */
+    esp_restart();
+}
+
+bool hal_radio_repair_status(char *out, size_t n) { return tdp4_c6_repair_status(out, n); }
+
+/* A repair was requested: run it instead of ESP-Hosted, which would hold the
+ * SDIO link. The request is cleared first, so a crash cannot loop. */
+static bool radio_repair_pending(void)
+{
+    if (hal_cfg_get_i32("rfx", 0) == 0) return false;
+    hal_cfg_set_i32("rfx", 0);
+    char ssid[33] = "", pass[65] = "", url[256] = "";
+    hal_cfg_get_str("rfx_ssid", ssid, sizeof(ssid));
+    hal_cfg_get_str("rfx_pass", pass, sizeof(pass));
+    hal_cfg_get_str("rfx_url", url, sizeof(url));
+    hal_cfg_set_str("rfx_pass", NULL);
+    tdp4_c6_repair_start(ssid, pass, url[0] ? url : C6_ADAPTER_URL);
+    memset(pass, 0, sizeof(pass));
+    return true;
+}
+
 bool hal_radio_init(void)
 {
     static bool s_done, s_ok;
     if (s_done) return s_ok;
     s_done = true;
     if (s_xl == NULL) return false;
+    if (radio_repair_pending()) return false; /* Wi-Fi stays off this boot */
     if (esp_hosted_sdio_set_reset_callback(c6_reset_cb, NULL) != ESP_TRANSPORT_OK) {
         ESP_LOGE(TAG, "ESP-Hosted reset callback not accepted");
         return false;

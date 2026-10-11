@@ -12,7 +12,7 @@ if(deck_board STREQUAL "tdisplay_p4")
         message(FATAL_ERROR "DECK_BOARD=tdisplay_p4 but sdkconfig selects the Tab5; delete the sdkconfig or use a separate build dir")
     endif()
     idf_component_register(
-        SRCS "hal_common.c" "hal_geometry.c" "hal_tdisplay_p4.c" "tdp4_keyboard.c" "tdp4_touch.c" "tdp4_orient.c"
+        SRCS "hal_common.c" "hal_geometry.c" "hal_tdisplay_p4.c" "tdp4_keyboard.c" "tdp4_touch.c" "tdp4_orient.c" "tdp4_c6_repair.c"
         INCLUDE_DIRS "include"
         REQUIRES lvgl__lvgl
         PRIV_REQUIRES

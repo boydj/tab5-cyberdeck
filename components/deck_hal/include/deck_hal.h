@@ -161,6 +161,18 @@ void hal_kbd_light(uint8_t brightness, bool use_color, uint32_t rgb);
  * be brought up (Wi-Fi then stays off). */
 bool hal_radio_init(void);
 
+/* Radio repair (T-Display P4): its ESP32-C6 can ship with Espressif's AT
+ * firmware instead of the network adapter DECK//OS needs. While AT is still
+ * on it, the C6 can download and install the adapter over its own Wi-Fi.
+ * hal_radio_repair_request() saves what that needs and restarts the deck;
+ * the next boot runs the repair instead of Wi-Fi, and restarts again when it
+ * has worked. One attempt per request. Unsupported boards: no-ops. */
+bool        hal_radio_repair_supported(void);
+const char *hal_radio_repair_default_url(void);
+void        hal_radio_repair_request(const char *ssid, const char *pass, const char *url);
+/* Status line of the repair on this boot; false if none ran. */
+bool        hal_radio_repair_status(char *out, size_t n);
+
 /* ---- Power --------------------------------------------------------------- */
 
 typedef struct {

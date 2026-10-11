@@ -268,3 +268,28 @@ bool hal_orient_calibrate(int step)
     printf("[sim] calibrate step %d\n", step);
     return hal_orient_supported();
 }
+
+/* Radio repair: the T-Display build offers it; a request just shows a
+ * status line (DECK_SIM_REPAIR_STATUS presets one for screenshots). */
+static char s_repair[112];
+
+bool hal_radio_repair_supported(void) { return hal_orient_supported(); }
+const char *hal_radio_repair_default_url(void)
+{
+    return "https://github.com/Xinyuan-LilyGO/lilygobox-espidf/releases/download/v1.1.2/"
+           "lilygobox-t-display-p4-device-v1.0-esp32c6-rev0.0-v2.12.3.bin";
+}
+void hal_radio_repair_request(const char *ssid, const char *pass, const char *url)
+{
+    (void)pass;
+    printf("[sim] radio repair: %s via %s\n", ssid, url);
+    snprintf(s_repair, sizeof(s_repair), "JOINING %s", ssid);
+}
+bool hal_radio_repair_status(char *out, size_t n)
+{
+    const char *preset = getenv("DECK_SIM_REPAIR_STATUS");
+    const char *s      = s_repair[0] ? s_repair : preset;
+    if (s == NULL || n == 0) return false;
+    snprintf(out, n, "%s", s);
+    return true;
+}

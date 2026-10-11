@@ -37,6 +37,8 @@ typedef struct {
     lv_obj_t *net_ip;
     lv_obj_t *net_signal;
     lv_obj_t *join_btn;
+    lv_obj_t *repair_btn;    /* boards that can repair their radio; shown while it is missing */
+    lv_obj_t *repair_status;
     lv_obj_t *tz_val;
     lv_obj_t *ntp;
     lv_timer_t *scan_poll;
@@ -468,6 +470,58 @@ static void forget_clicked(lv_event_t *e)
     deck_modal_confirm("FORGET NETWORK", msg, "FORGET", forget_confirmed, NULL);
 }
 
+/* REPAIR (T-Display P4): the C6 may still run Espressif's AT firmware. Ask
+ * for a Wi-Fi network and the firmware URL, then the HAL restarts into the
+ * repair. The network is also saved as the deck's, so it joins it once the
+ * radio works. */
+static char s_rep_ssid[33];
+static char s_rep_pass[65];
+
+static void repair_url_entered(const char *text, void *ud)
+{
+    (void)ud;
+    if (text != NULL) {
+        net_connect(s_rep_ssid, s_rep_pass); /* only saved: the radio is down */
+        hal_radio_repair_request(s_rep_ssid, s_rep_pass, text[0] ? text : hal_radio_repair_default_url());
+    }
+    memset(s_rep_pass, 0, sizeof(s_rep_pass));
+}
+
+static void repair_pass_entered(const char *text, void *ud)
+{
+    (void)ud;
+    if (text == NULL) return;
+    snprintf(s_rep_pass, sizeof(s_rep_pass), "%s", text);
+    /* Empty: LilyGo's release on GitHub. A short local URL is easier to type
+     * than editing that one (http://<computer>:8000/<file>.bin). */
+    deck_modal_prompt("FIRMWARE URL (EMPTY = LILYGO RELEASE)", "", repair_url_entered, NULL);
+}
+
+static void repair_ssid_entered(const char *text, void *ud)
+{
+    (void)ud;
+    if (text == NULL || text[0] == '\0') return;
+    snprintf(s_rep_ssid, sizeof(s_rep_ssid), "%s", text);
+    deck_modal_password(s_rep_ssid, repair_pass_entered, NULL); /* empty for an open network */
+}
+
+static void repair_confirmed(bool yes, void *ud)
+{
+    (void)ud;
+    if (yes) deck_modal_prompt("WI-FI NETWORK (2.4 GHZ)", net_ssid(), repair_ssid_entered, NULL);
+}
+
+static void repair_clicked(lv_event_t *e)
+{
+    (void)e;
+    deck_modal_confirm("REPAIR RADIO",
+                       "The Wi-Fi chip (ESP32-C6) is not answering. If it still runs Espressif's AT firmware, it "
+                       "can download LilyGo's network adapter and install it itself, over a 2.4 GHz Wi-Fi network. "
+                       "The deck restarts to do this and again when it is done (a few minutes). If it fails, "
+                       "nothing changes.",
+                       "CONTINUE", repair_confirmed, NULL);
+}
+
 static void tz_picked(int index, void *ud)
 {
     (void)ud;
@@ -508,6 +562,24 @@ static void refresh_net(void)
         lv_label_set_text_fmt(s_ui.net_signal, "%d dBm  %.*s", net_rssi(), net_bars(), "||||");
     } else {
         lv_label_set_text(s_ui.net_signal, "--");
+    }
+    if (s_ui.repair_btn) {
+        char rs[112];
+        bool ran    = hal_radio_repair_status(rs, sizeof(rs));
+        bool failed = ran && strncmp(rs, "FAILED", 6) == 0;
+        /* Offer it while the radio is missing and no repair is under way. */
+        bool offer = st == NET_NO_RADIO && (!ran || failed);
+        if (offer) lv_obj_remove_flag(s_ui.repair_btn, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_ui.repair_btn, LV_OBJ_FLAG_HIDDEN);
+        if (ran) {
+            lv_label_set_text_fmt(s_ui.repair_status, "RADIO REPAIR: %s", rs);
+            lv_obj_set_style_text_color(s_ui.repair_status, failed ? g_pal.danger : g_pal.warn, 0);
+        } else if (offer) {
+            lv_label_set_text(s_ui.repair_status, "The Wi-Fi chip did not answer. REPAIR can reinstall its firmware.");
+            lv_obj_set_style_text_color(s_ui.repair_status, g_pal.dim, 0);
+        }
+        if (ran || offer) lv_obj_remove_flag(s_ui.repair_status, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_ui.repair_status, LV_OBJ_FLAG_HIDDEN);
     }
     lv_label_set_text(s_ui.tz_val, hal_tz_name(hal_tz_get()));
     lv_label_set_text(s_ui.ntp, net_time_synced() ? "NTP: SYNCED" : st == NET_CONNECTED ? "NTP: SYNCING"
@@ -778,11 +850,20 @@ static bool start(deck_app_t *self, lv_obj_t *parent)
     s_ui.net_signal = kv_row(mid, "SIGNAL");
     lv_obj_t *nb = deck_box(mid);
     lv_obj_set_width(nb, LV_PCT(100));
-    lv_obj_set_flex_flow(nb, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_flow(nb, LV_FLEX_FLOW_ROW_WRAP); /* REPAIR wraps on a narrow column */
     lv_obj_set_style_pad_column(nb, 12, 0);
+    lv_obj_set_style_pad_row(nb, 10, 0);
     lv_obj_set_style_margin_top(nb, 4, 0);
     s_ui.join_btn = small_button(nb, "JOIN", join_clicked, NULL);
     small_button(nb, "FORGET", forget_clicked, NULL);
+    if (hal_radio_repair_supported()) {
+        s_ui.repair_btn = small_button(nb, "REPAIR", repair_clicked, NULL);
+        lv_obj_add_flag(s_ui.repair_btn, LV_OBJ_FLAG_HIDDEN);
+        s_ui.repair_status = deck_label(mid, g_font.mono_s, g_pal.dim, "");
+        lv_obj_set_width(s_ui.repair_status, LV_PCT(100));
+        lv_label_set_long_mode(s_ui.repair_status, LV_LABEL_LONG_WRAP);
+        lv_obj_add_flag(s_ui.repair_status, LV_OBJ_FLAG_HIDDEN);
+    }
 
     lv_obj_t *ts = deck_section(mid, "TIME");
     lv_obj_set_style_margin_top(ts, 8, 0);

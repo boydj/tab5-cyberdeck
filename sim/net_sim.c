@@ -25,6 +25,7 @@ static const net_ap_t s_fake[] = {
 static void tick(void)
 {
     uint32_t now = lv_tick_get();
+    if (s_state == NET_STARTING && now > 300 && getenv("DECK_SIM_NO_RADIO")) s_state = NET_NO_RADIO;
     if (s_state == NET_STARTING && now > 300) {
         hal_cfg_get_str("wifi_ssid", s_ssid, sizeof(s_ssid));
         s_state      = s_ssid[0] ? NET_CONNECTING : NET_IDLE;

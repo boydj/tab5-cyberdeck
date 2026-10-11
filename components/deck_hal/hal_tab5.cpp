@@ -447,6 +447,21 @@ bool hal_init(void)
  * init), so there is nothing left to do before esp_wifi_init(). */
 bool hal_radio_init(void) { return true; }
 
+bool hal_radio_repair_supported(void) { return false; }
+const char *hal_radio_repair_default_url(void) { return ""; }
+void hal_radio_repair_request(const char *ssid, const char *pass, const char *url)
+{
+    (void)ssid;
+    (void)pass;
+    (void)url;
+}
+bool hal_radio_repair_status(char *out, size_t n)
+{
+    (void)out;
+    (void)n;
+    return false;
+}
+
 void *hal_codec_i2c(void) { return hal_tab5_sys_i2c(); }
 
 /* ---- Orientation: the Tab5 keeps its keyboard below a landscape screen --- */
