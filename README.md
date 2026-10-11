@@ -240,7 +240,9 @@ idf.py -B build-tdisplay_p4 -DDECK_BOARD=tdisplay_p4 -p /dev/cu.usbmodem* flash 
 
 Needs ESP-IDF 5.5.3 or newer (pre-v3 chip revision support; LilyGo ships
 ESP32-P4 rev 1.x). The image is `deck_tdisplay_p4.bin`.
-Settings land in `sdkconfig.tdisplay_p4`; delete it after pulling changes
+Flashing and the log (`idf.py monitor`, 115200) both use the USB-C port with
+the USB-UART bridge (UART0, auto-reset); the P4's USB Serial/JTAG is not on
+a connector. Settings land in `sdkconfig.tdisplay_p4`; delete it after pulling changes
 to `sdkconfig.defaults*`, since an existing sdkconfig keeps its old values.
 
 - **Wi-Fi** needs LilyGo's ESP-Hosted network adapter (2.12.x) on the C6, the

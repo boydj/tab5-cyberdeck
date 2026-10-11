@@ -5,6 +5,13 @@ CONFIG_DECK_BOARD_TDISPLAY_P4=y
 # a key was burned before (see DECK_NVS_KEY_BURN in components/deck_hal/Kconfig).
 # CONFIG_DECK_NVS_KEY_BURN is not set
 
+# Console on UART0 (GPIO37/38): the board's USB-C port with the USB-UART
+# bridge (and DTR/RTS auto-reset) is wired there. The P4's USB Serial/JTAG
+# pins are not on a connector, so a log sent there is never seen.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+# CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG is not set
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
 # LilyGo ships ESP32-P4 revision 1.x silicon: build for pre-v3 chips
 # (ESP-IDF 5.5.3+ otherwise targets v3.x and the image will not boot).
 CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
@@ -32,12 +39,15 @@ CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D3_4BIT_BUS_SLOT_1=17
 CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=y
 # CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_LOW is not set
 CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=51
+# A C6 that does not answer leaves Wi-Fi off (NO RADIO) instead of
+# rebooting the deck, which ESP-Hosted does by default.
+# CONFIG_ESP_HOSTED_TRANSPORT_RESTART_ON_FAILURE is not set
 # Keep internal DMA memory for the SDIO link and TLS (LilyGo's settings).
 CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 
 # ---- Display ------------------------------------------------------------------
-# Native portrait AMOLED: no PPA rotation needed.
+# esp_lvgl_port's own PPA rotation is unused: the HAL rotates in its flush.
 # CONFIG_LVGL_PORT_ENABLE_PPA is not set
 # The HAL copies finished areas into the frame buffer with the PPA and
 # registers no DPI callbacks, so the cache-safe DSI ISR from
