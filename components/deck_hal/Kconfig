@@ -16,4 +16,16 @@ menu "DECK//OS board"
             bool "LilyGo T-Display P4 (4.1in AMOLED, v1.0) + K270 keyboard"
     endchoice
 
+    config DECK_NVS_KEY_BURN
+        bool "Burn an eFuse key to encrypt settings"
+        default y if DECK_BOARD_TAB5
+        default n
+        help
+            On the first boot without a key, burn a random HMAC key into a
+            free eFuse key block and keep settings (Wi-Fi password, SSH key)
+            encrypted with it. eFuse writes are permanent. When off, nothing
+            is burned: settings stay plain, unless a key was burned earlier,
+            which is then used to read them. Off by default on the T-Display
+            P4 while it is being tested.
+
 endmenu

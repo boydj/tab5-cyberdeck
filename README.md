@@ -166,7 +166,8 @@ over Wi-Fi (SYSTEM > UPDATE).
   one free eFuse key block, and moves the existing settings over. This is the
   only eFuse change. It does not restrict flashing, and if anything goes wrong the deck
   falls back to plain settings rather than failing to boot. SYSTEM > SECURITY
-  shows which mode is active.
+  shows which mode is active. T-Display P4 builds burn nothing by default
+  (`CONFIG_DECK_NVS_KEY_BURN`), so their settings stay plain.
 - **Updates are signed.** A deck running a signed build only installs
   over-the-air updates signed with the same key (RSA-3072). Nothing is
   burned for this, and the bootloader does not check signatures, so USB and the web
@@ -215,8 +216,8 @@ Builds from source are unsigned: the signed-update settings live in
 `sdkconfig.release`, which only `tools/release.sh` applies, so a fresh clone
 builds and boots without a signing key. An unsigned build installs the official
 over-the-air updates too (only signed builds check signatures). Note that, like
-the official firmware, any build burns its settings encryption key into a free
-eFuse key block on first boot (see Security).
+the official firmware, any Tab5 build burns its settings encryption key into a
+free eFuse key block on first boot (see Security).
 
 ## LilyGo T-Display P4 build
 

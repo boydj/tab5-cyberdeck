@@ -1,6 +1,9 @@
 # ---- LilyGo T-Display P4 v1.0 (4.1" AMOLED) + K270 keyboard -----------------
 # Applied on top of sdkconfig.defaults by -DDECK_BOARD=tdisplay_p4.
 CONFIG_DECK_BOARD_TDISPLAY_P4=y
+# No eFuse writes while the port is being tested: settings stay plain unless
+# a key was burned before (see DECK_NVS_KEY_BURN in components/deck_hal/Kconfig).
+# CONFIG_DECK_NVS_KEY_BURN is not set
 
 # LilyGo ships ESP32-P4 revision 1.x silicon: build for pre-v3 chips
 # (ESP-IDF 5.5.3+ otherwise targets v3.x and the image will not boot).

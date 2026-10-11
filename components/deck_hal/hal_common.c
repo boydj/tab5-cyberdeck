@@ -120,12 +120,19 @@ uint64_t hal_sd_free_bytes(void)
  * no such key: the plain settings are copied to RAM, a random HMAC key is
  * burned into the first free key block, the partition is erased, re-opened
  * encrypted and the settings are written back. That burn is the only eFuse
- * change and it does not restrict flashing.
+ * change and it does not restrict flashing. With CONFIG_DECK_NVS_KEY_BURN
+ * off nothing is burned: a key burned earlier is still used, otherwise the
+ * settings stay plain.
  *
  * Anything going wrong on that path falls back to plain NVS, so settings may
  * be lost but the deck always boots. */
 
 #define NVS_PART "nvs"
+#ifdef CONFIG_DECK_NVS_KEY_BURN
+#define KEY_BURN true
+#else
+#define KEY_BURN false
+#endif
 #define MIGRATE_MAX 48
 
 typedef struct {
@@ -242,6 +249,8 @@ void hal_common_nvs_init(void)
         /* Normal boot: the key exists. */
         if (sec_cfg(blk, false, &cfg) == ESP_OK) err = secure_open(&cfg);
         if (err != ESP_OK) ESP_LOGE("hal", "encrypted settings failed (0x%x), using plain NVS", err);
+    } else if (!KEY_BURN) {
+        ESP_LOGI("hal", "settings stay unencrypted (eFuse key burn disabled in this build)");
     } else if ((blk = esp_efuse_find_unused_key_block()) != EFUSE_BLK_KEY_MAX) {
         /* First boot with encryption: migrate. */
         int n = 0;
